@@ -47,7 +47,9 @@ try {
     } finally { $archive.Dispose() }
     $zip = Join-Path $projectRoot "dist/ShareVibeX-$Version-win-x64.zip"
     $temporaryZip = Join-Path $projectRoot ('dist/package-' + [Guid]::NewGuid().ToString('N') + '.zip')
-    Compress-Archive -Path (Join-Path $temporary '*') -DestinationPath $temporaryZip
+    $portableEntries = 'libs','third-party-licenses','LICENSE','ShareVibeX.App.exe' |
+        ForEach-Object { Join-Path $temporary $_ }
+    Compress-Archive -LiteralPath $portableEntries -DestinationPath $temporaryZip
     Move-Item -LiteralPath $temporaryZip -Destination $zip -Force
     # Preserve the previous build and any portable data; the stable path always points to the latest build.
     if (Test-Path -LiteralPath $publishDirectory) {

@@ -6,7 +6,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
-    <Version>0.18.0</Version>
+    <Version>0.18.1</Version>
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>

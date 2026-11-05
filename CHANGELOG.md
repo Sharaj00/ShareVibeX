@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18.1 — 2026-11-06
+
+- Use fixed capture for regions that leave at most two pixels of movement on either axis.
+- Write terminal recording errors to the diagnostic log.
+- Limit the portable ZIP to the launcher, runtime libraries, and license files. Provide sources as a separate release asset.
+
 ## 0.18.0 — 2026-11-05
 
 - Add live region movement for structured WGC recording on one SDR monitor. Keep the encoder and audio streams open during a move.

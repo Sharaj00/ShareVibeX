@@ -307,7 +307,10 @@ public sealed class RecordingSessionController
     private void Complete(RecordingResult result,bool canceled)
     {
         Result=result;if(!canceled)State=result.Success?RecordingSessionState.Result:RecordingSessionState.Failed;
-        if(published)return;published=true;Changed?.Invoke();Finished?.Invoke(new(Workspace,result,canceled));completed?.TrySetResult(result);
+        if(published)return;
+        published=true;
+        if(!canceled&&!result.Success)DiagnosticLog.Write("Recording failed: "+result.Error);
+        Changed?.Invoke();Finished?.Invoke(new(Workspace,result,canceled));completed?.TrySetResult(result);
     }
     private TimeSpan? MediaDuration(RecordingProgress progress)=>progress.Frames is >0 && options is not null
         ? TimeSpan.FromSeconds(progress.Frames.Value/(double)options.FrameRate):progress.Duration;

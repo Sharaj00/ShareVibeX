@@ -24,6 +24,17 @@ public sealed class RecordingPlacementTests
         var panel=new PixelRect(position.Value.X,position.Value.Y,(int)Math.Ceiling(380*scale),(int)Math.Ceiling(128*scale));
         Assert.Equal(panel,panel.Intersect(monitor.Bounds));Assert.True(panel.Intersect(region).IsEmpty);
     }
+    [Theory]
+    [InlineData(2560,1440,false)]
+    [InlineData(2560,1438,false)]
+    [InlineData(2558,1440,false)]
+    [InlineData(2560,1400,true)]
+    [InlineData(1920,1080,true)]
+    public void NearFullscreenUsesFixedCapture(int width,int height,bool movable)
+    {
+        Assert.Equal(movable,RecordingControlPlacement.CanMoveWithinMonitor(new(0,0,width,height),new(0,0,2560,1440)));
+    }
+
     [Fact]
     public void FullMonitorRequiresSuccessfulExclusion()
     {

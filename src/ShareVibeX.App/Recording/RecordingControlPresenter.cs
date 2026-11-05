@@ -58,7 +58,7 @@ public sealed class RecordingControlPresenter : IDisposable
             microphoneAvailable=!request.Options.IsAnimation&&(MicrophoneProbe is null||await MicrophoneProbe(request.Options,startingCancellation.Token));
             controls.SetMicrophoneAvailable(microphoneAvailable,request.Options.IsAnimation);
             if(request.Sources.Microphone&&!microphoneAvailable)throw new InvalidOperationException(Loc.T(MicrophoneAvailability.UnavailableMessage));
-            var movable=!request.Options.UseCustomCommand&&request.Region!=monitor.Bounds&&monitor.Bounds.Intersect(request.Region)==request.Region;
+            var movable=!request.Options.UseCustomCommand&&RecordingControlPlacement.CanMoveWithinMonitor(request.Region,monitor.Bounds);
             if(!controls.TryPresent(request.Region,monitor,exclude,request.ToolbarPlacement,roomForMove:true))
                 throw new InvalidOperationException(Loc.T("Recording controls cannot be excluded from capture or placed outside the region. Choose a smaller region or use a Windows configuration supporting capture exclusion."));
             Func<PixelRect,PixelRect?>? move=null;

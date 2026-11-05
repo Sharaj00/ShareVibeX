@@ -7,6 +7,13 @@ namespace ShareVibeX.App.Recording;
 
 public static class RecordingControlPlacement
 {
+    public static bool CanMoveWithinMonitor(PixelRect region,PixelRect monitor)
+    {
+        // Edge selections can miss a couple of physical pixels without leaving useful room to drag.
+        return !region.IsEmpty&&monitor.Intersect(region)==region&&
+            (monitor.Width-region.Width>2||monitor.Height-region.Height>2);
+    }
+
     public static PixelPoint? TryPlace(PixelRect region,MonitorInfo monitor,Size logicalSize,bool excluded)
     {
         if(!double.IsFinite(monitor.Scale)||monitor.Scale<=0||!double.IsFinite(logicalSize.Width)||!double.IsFinite(logicalSize.Height)||logicalSize.Width<=0||logicalSize.Height<=0)return null;
