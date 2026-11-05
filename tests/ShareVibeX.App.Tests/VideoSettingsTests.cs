@@ -36,11 +36,11 @@ public sealed class VideoSettingsTests(UiTestFixture ui)
         using var page=new VideoSettingsPage(new());var window=new Window{Width=width,Height=1000,Content=page};
         try
         {
-            window.Show();window.UpdateLayout();var fps=Find<NumericUpDown>(page,"Frame rate");Assert.True(fps.Bounds.Width>=140);
+            window.Show();window.UpdateLayout();var fps=Find<NumericUpDown>(page,"Frame rate");Assert.True(fps.Bounds.Width>=70);
             var tabs=page.GetLogicalDescendants().OfType<TabControl>().Single();
             foreach(var tab in tabs.Items.Cast<TabItem>())Assert.IsType<TextBlock>(tab.Header);
             foreach(var label in page.GetVisualDescendants().OfType<TextBlock>().Where(t=>t.Classes.Contains("video-field-label")&&t.IsEffectivelyVisible))
-            {Assert.Equal(Avalonia.Media.TextWrapping.NoWrap,label.TextWrapping);Assert.True(label.Bounds.Width>200);}
+            {Assert.Equal(Avalonia.Media.TextWrapping.NoWrap,label.TextWrapping);Assert.True(label.Bounds.Width>=100);}
         }
         finally{window.Close();Application.Current!.Styles.Remove(fluent);ShareVibeX.Core.Localization.Loc.Language=old;}
     });

@@ -24,7 +24,7 @@ public sealed class RecordingAssembler(IRecordingProcessFactory processes,Func<s
             {
                 var args=RecordingAssemblyCommand.Build(options,segments,keepAudio,workspace.WorkingPath);
                 if(args.Sum(a=>a.Length+3)>28000)throw new IOException(Loc.T("Segment assembly command is too large. Original segments were retained."));
-                var executable=(resolve??(path=>FfmpegLocator.Resolve(path,AppContext.BaseDirectory)))(options.FfmpegPath);
+                var executable=(resolve??(path=>FfmpegLocator.Resolve(path,ShareVibeX.Core.IO.PortablePaths.BaseDirectory)))(options.FfmpegPath);
                 process=processes.Start(executable,new[]{"-progress","pipe:1","-nostats","-loglevel","warning"}.Concat(args).ToArray());
                 var exit=await process.Exit.WaitAsync(token);
                 if(exit!=0)throw new IOException(Loc.T("FFmpeg assembly failed: ")+process.Diagnostics);

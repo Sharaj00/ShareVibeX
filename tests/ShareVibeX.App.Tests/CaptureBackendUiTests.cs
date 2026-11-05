@@ -29,11 +29,10 @@ public sealed class CaptureBackendUiTests(UiTestFixture ui)
             var combo=ActiveTab().OfType<ComboBox>().Single(c=>AutomationProperties.GetName(c)=="Screenshot capture method");
             Assert.Equal(CaptureBackend.Gdi,combo.SelectedItem);
             Assert.Equal(3,combo.ItemCount);combo.SelectedItem=CaptureBackend.WindowsGraphicsCapture;
-            captureTabs.SelectedIndex=2;
-            Assert.DoesNotContain(ActiveTab().OfType<ComboBox>(),c=>AutomationProperties.GetName(c)=="Screenshot capture method");
             captureTabs.SelectedIndex=1;
+            Assert.DoesNotContain(ActiveTab().OfType<ComboBox>(),c=>AutomationProperties.GetName(c)=="Screenshot capture method");
+            captureTabs.SelectedIndex=0;
             Assert.Equal(Loc.T("Applies to screenshots and structured video recording. Custom FFmpeg commands keep their explicit source."),ToolTip.GetTip((Control)combo.Parent!));
-            window.GetLogicalDescendants().OfType<Button>().Single(b=>AutomationProperties.GetName(b)=="Save settings").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var result=await saved.Task.WaitAsync(TimeSpan.FromSeconds(3));
             Assert.Equal(CaptureBackend.WindowsGraphicsCapture,result.CaptureBackend);Assert.Equal(original.Selection,result.Selection);
             Assert.Equal(original.RecordingDefaults,result.RecordingDefaults);Assert.Equal(original.CaptureHotkey,result.CaptureHotkey);
@@ -49,10 +48,14 @@ public sealed class CaptureBackendUiTests(UiTestFixture ui)
             ComboBox Find(string name)=>Controls(window).OfType<ComboBox>().Single(c=>AutomationProperties.GetName(c)==name);
             var encoder=Find("Video encoder");var preset=Find("Encoder preset");var tune=Find("Encoder tune");
             Assert.Contains("placebo",preset.Items.Cast<string>());Assert.True(tune.IsEnabled);
+            Assert.Contains("x264",Assert.IsType<string>(ToolTip.GetTip(preset)));
+            Assert.Contains("stillimage",Assert.IsType<string>(ToolTip.GetTip(tune)));
             preset.SelectedItem="placebo";tune.SelectedItem="film";
             encoder.SelectedItem=ShareVibeX.Core.Recording.VideoEncoder.H264Qsv;
             Assert.Equal("auto",preset.SelectedItem);Assert.Equal("",tune.SelectedItem);Assert.False(tune.IsEnabled);
             Assert.DoesNotContain("placebo",preset.Items.Cast<string>());
+            Assert.Contains("Quick Sync",Assert.IsType<string>(ToolTip.GetTip(preset)));
+            Assert.Null(ToolTip.GetTip(tune));
             encoder.SelectedItem=ShareVibeX.Core.Recording.VideoEncoder.Libx264;
             Assert.Equal("placebo",preset.SelectedItem);Assert.Equal("film",tune.SelectedItem);Assert.True(tune.IsEnabled);
             encoder.SelectedItem=ShareVibeX.Core.Recording.VideoEncoder.LibvpxVp9;

@@ -13,7 +13,7 @@ namespace ShareVibeX.App;
 
 public sealed partial class App : Application
 {
-    private AppSettings settings = new();
+    private AppSettings settings = AppSettings.FactoryDefaults;
     private PortableSettingsStore store = null!;
     private SettingsWindow? settingsWindow;
     private IClassicDesktopStyleApplicationLifetime lifetime = null!;
@@ -44,7 +44,8 @@ public sealed partial class App : Application
             lifetime = desktop;
             lifetime.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             var args = Program.Arguments;
-            store = new PortableSettingsStore(Path.Combine(AppContext.BaseDirectory, "data"));
+            var portable=ShareVibeX.Core.IO.PortablePaths.BaseDirectory;
+            store=new PortableSettingsStore(Path.Combine(portable,"data"),Path.Combine(portable,"settings.json"));
             if (args.Contains("--diagnostics")) DiagnosticLog.DirectoryPath = store.DataDirectory;
             ThemeManager.Apply(this, settings.Theme);
             History=new History.CaptureHistory(()=>settings);
@@ -72,6 +73,7 @@ public sealed partial class App : Application
         }
         settingsReady = true;
         Loc.Language=settings.Language;DisposeTray();CreateTray();
+        DiagnosticLog.Write("Portable settings loaded.");
         CapturePanelStyle.ButtonSize=40;ThemeManager.Apply(this,settings.Theme);
         try { SettingsChanged?.Invoke(settings); }
         catch (Exception error) { ReportStatus(error.Message); }
@@ -85,7 +87,7 @@ public sealed partial class App : Application
         var text = Ui.Text(error);
         window.Content = new ScrollViewer { Margin = new Thickness(24), Content = Ui.Stack(
             Ui.Text("Choose how to continue", 22), text,
-            Ui.Text("Settings always use the data folder beside ShareVibeX. If that folder is read-only, move the portable application to a writable location and restart. Existing settings are preserved.", muted: true),
+            Ui.Text("Settings use the folder beside ShareVibeX. If it is read-only, move the portable application to a writable location and restart. Existing settings are preserved.", muted: true),
             Ui.Button("Retry", async () =>
             {
                 window.Close(); await InitializeSettingsAsync();
@@ -94,9 +96,9 @@ public sealed partial class App : Application
             {
                 try
                 {
-                    var path = Path.Combine(store.DataDirectory, "settings.json");
+                    var path = store.ExistingSettingsPath;
                     if (File.Exists(path)) File.Copy(path, path + $".{DateTime.Now:yyyyMMdd-HHmmss-fff}.bak", false);
-                    await store.SaveAsync(new AppSettings());
+                    await store.SaveAsync(AppSettings.FactoryDefaults);
                     window.Close(); await InitializeSettingsAsync();
                 }
                 catch (Exception failure) { text.Text = failure.Message; }
@@ -118,7 +120,7 @@ public sealed partial class App : Application
         var historyRequested=recordingActive||recordingResultPending;
         if (!settingsReady) { OpenRecovery(status); return; }
         if (settingsWindow is not null) { if(historyRequested)settingsWindow.SelectHistory();settingsWindow.RefreshEditAccess();settingsWindow.Show(); settingsWindow.Activate(); return; }
-        var registration=new ShareVibeX.Platform.Windows.WindowsStartupRegistration(Environment.ProcessPath??Path.Combine(AppContext.BaseDirectory,"ShareVibeX.exe"));
+        var registration=new ShareVibeX.Platform.Windows.WindowsStartupRegistration(Environment.ProcessPath??Path.Combine(ShareVibeX.Core.IO.PortablePaths.BaseDirectory,"ShareVibeX.exe"));
         AppSettings displayed;
         try{displayed=settings with{StartWithWindows=registration.IsEnabled};}
         catch(Exception error){ReportStatus(Loc.F("Cannot read Windows startup preferences: {0}",Loc.T(error.Message)));return;}
@@ -127,13 +129,19 @@ public sealed partial class App : Application
             await Startup.SettingsUpdate.SaveAsync(settings,displayed,proposed,
                 value=>SettingsChanged?.Invoke(value),value=>store.SaveAsync(value),
                 (enabled,persist)=>OperatingSystem.IsWindows()?Startup.StartupSettingsTransaction.SaveAsync(registration,enabled,persist):persist());
-            settings = proposed;Loc.Language=settings.Language;DisposeTray();CreateTray();CapturePanelStyle.ButtonSize=40;
-            ThemeManager.Apply(this, settings.Theme);
+            var languageChanged=settings.Language!=proposed.Language;
+            settings=displayed=proposed;
+            if(languageChanged){Loc.Language=settings.Language;DisposeTray();CreateTray();}
             ReportStatus("Ready to capture");
         }, theme => ThemeManager.Apply(this, theme),OperatingSystem.IsWindows()?new WindowsRecordingAudioFactory():null,
             history:History,ffmpegPath:()=>Settings.RecordingDefaults.FfmpegPath,canEdit:()=>!recordingActive&&!recordingResultPending);
         if(historyRequested)settingsWindow.SelectHistory();
         settingsWindow.Closed += (_, _) => settingsWindow = null;
+        settingsWindow.LanguageApplied+=()=>
+        {
+            settingsWindow?.Close();
+            OpenSettings();
+        };
         settingsWindow.SetStatus(status);
         settingsWindow.Show();
     }

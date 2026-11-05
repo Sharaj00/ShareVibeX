@@ -24,7 +24,7 @@ public sealed class VideoRenderer(IRecordingProcessFactory processes,Func<string
         {
             if(source.Duration is null)throw new InvalidDataException(Loc.T("Duration is unavailable. Save this recording in its original container."));
             var args=VideoEditCommand.Build(source,edit,options,output);if(args.Sum(s=>s.Length+3)>28000)throw new IOException(Loc.T("Too many edit intervals for one render. Original media was retained."));
-            var executable=(resolve??(path=>FfmpegLocator.Resolve(path,AppContext.BaseDirectory)))(source.FfmpegPath);
+            var executable=(resolve??(path=>FfmpegLocator.Resolve(path,ShareVibeX.Core.IO.PortablePaths.BaseDirectory)))(source.FfmpegPath);
             var process=processes.Start(executable,new[]{"-progress","pipe:1","-nostats","-loglevel","warning"}.Concat(args).ToArray());
             try
             {

@@ -10,7 +10,11 @@ public sealed class CaptureWorkflow(CaptureCoordinator coordinator, IDesktopCapt
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        if (active is not null || !coordinator.TryBeginSelection()) return;
+        if(active is not null||!coordinator.TryBeginSelection())
+        {
+            DiagnosticLog.Write($"Capture workflow refused selection: active={active is not null}, state={coordinator.State}");
+            return;
+        }
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         active = linked;
         var request = ++generation;

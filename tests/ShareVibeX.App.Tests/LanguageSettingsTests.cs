@@ -27,14 +27,13 @@ public sealed class LanguageSettingsTests(UiTestFixture ui)
             Assert.Contains(window.GetLogicalDescendants().OfType<TabItem>(),t=>Equals(t.Header,"Общее"));
             var language=window.GetLogicalDescendants().OfType<ComboBox>().Distinct().Single(c=>AutomationProperties.GetName(c)=="Interface language");
             Assert.Equal(1,language.SelectedIndex);language.SelectedIndex=0;
-            window.GetLogicalDescendants().OfType<Button>().Single(b=>Equals(b.Content,"Сохранить настройки")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             for(var i=0;i<20&&saved is null;i++)await Task.Delay(10);
             Assert.NotNull(saved);Assert.Equal(AppLanguage.English,saved.Language);Assert.Equal(settings.OutputDirectory,saved.OutputDirectory);Assert.Equal(settings.CaptureHotkey,saved.CaptureHotkey);
         }
         finally{window.Close();Loc.Language=previous;Avalonia.Application.Current!.Styles.Remove(fluent);}
     });
     [Fact]
-    public Task PointerSavePersistsRussianAndReopenedSettingsUseIt()=>ui.Run(async()=>
+    public Task ChangingLanguagePersistsRussianAndReopenedSettingsUseIt()=>ui.Run(async()=>
     {
         var previous=Loc.Language;Loc.Language=AppLanguage.English;
         var root=Path.Combine(Path.GetTempPath(),"ShareVibeX-language-"+Guid.NewGuid().ToString("N"));
@@ -46,9 +45,7 @@ public sealed class LanguageSettingsTests(UiTestFixture ui)
         {
             window.Show();window.UpdateLayout();
             var language=window.GetLogicalDescendants().OfType<ComboBox>().Distinct().Single(c=>AutomationProperties.GetName(c)=="Interface language");language.SelectedIndex=1;
-            var button=window.GetLogicalDescendants().OfType<Button>().Single(b=>Equals(b.Content,"Save settings"));
-            var point=button.TranslatePoint(new Point(button.Bounds.Width/2,button.Bounds.Height/2),window)!.Value;
-            window.MouseDown(point,MouseButton.Left);window.MouseUp(point,MouseButton.Left);
+            window.Close();
             await closed.Task.WaitAsync(TimeSpan.FromSeconds(3));var loaded=await store.LoadAsync();Assert.Equal(AppLanguage.Russian,loaded.Language);
             reopened=new SettingsWindow(loaded,_=>Task.CompletedTask,_=>{});reopened.Show();reopened.UpdateLayout();
             Assert.Contains(reopened.GetLogicalDescendants().OfType<TabItem>(),t=>Equals(t.Header,"Общее"));

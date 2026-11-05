@@ -31,7 +31,8 @@ public static class CompositionRoot
         var clipboard = new ClipboardImageOwner();
         var recording=new RecordingService(new RecordingEngine(new ProcessCommandRunner(),new FfmpegRecordingProcessFactory(),new WindowsRecordingAudioFactory(),
             resolveWgc:new WindowsWgcVideoSourceResolver().Resolve,
-            openMovableVideo:(region,monitor,options,token)=>new WindowsMovableRecordingVideo(region,monitor,options,token)),preference:()=>app.Settings.CaptureBackend);
+            openMovableVideo:(region,monitor,options,token)=>new WindowsMovableRecordingVideo(region,monitor,options,token),
+            openMovableWgc:WindowsMovableRecordingVideo.OpenWgc),preference:()=>app.Settings.CaptureBackend);
         var preview=new RecordingPreviewHost(new FfmpegPreviewDecoderFactory(),new WindowsPreviewAudioOutputFactory(),app.History,feedback.Publish);
         var microphones=new MicrophoneAvailability(new WindowsRecordingAudioFactory());
         var recordingControls=new RecordingControlPresenter(recording,capture.GetMonitors,preview:preview){MicrophoneProbe=microphones.CheckAsync};
@@ -66,9 +67,13 @@ public static class CompositionRoot
         var running = false;
         async void Start()
         {
-            if(recording.IsActive){try{await recording.StopAsync();}catch(Exception error){app.ReportStatus(error.Message);}return;}
-            if(recording.HasPendingResult){recordingControls.Activate();return;}
-            if (running || app.IsExiting) return;
+            if(recording.IsActive){DiagnosticLog.Write("Capture shortcut: stopping active recording");try{await recording.StopAsync();}catch(Exception error){app.ReportStatus(error.Message);}return;}
+            if(recording.HasPendingResult){DiagnosticLog.Write("Capture shortcut: showing pending recording");recordingControls.Activate();return;}
+            if(running||app.IsExiting)
+            {
+                DiagnosticLog.Write($"Capture request ignored: running={running}, exiting={app.IsExiting}");
+                return;
+            }
             running = true;
             try { do { await workflow.StartAsync(); } while (presentation.RepeatRequested && !app.IsExiting); }
             catch(Exception error){DiagnosticLog.Write("Capture entry failed: "+error);app.ReportStatus(error.Message);}
@@ -77,10 +82,12 @@ public static class CompositionRoot
         app.CaptureRequested += Start;
         app.SettingsChanged += settings =>
         {
-                        hotkey?.Register(settings.CaptureHotkey,() =>
+            hotkey?.Register(settings.CaptureHotkey,() =>
             {
+                DiagnosticLog.Write("Capture: Windows delivered the global shortcut");
                 if (!app.TryCaptureRegisteredShortcut(settings.CaptureHotkey))
-                    Dispatcher.UIThread.Post(Start);
+                    Dispatcher.UIThread.Post(Start,DispatcherPriority.Send);
+                else DiagnosticLog.Write("Capture shortcut: captured by the settings shortcut editor");
             });
         };
         lifetime.ShutdownRequested += (_, _) => workflow.Cancel();

@@ -11,7 +11,7 @@ internal static class CaptureOutline
         return new Pen
         {
             Brush=new SolidColorBrush(color,options.OutlineOpacity/100d),
-            Thickness=1/scale,
+            Thickness=options.OutlineThickness/scale,
             LineCap=options.OutlineStyle==CaptureOutlineStyle.Dotted?PenLineCap.Round:PenLineCap.Flat,
             DashStyle=options.OutlineStyle switch
             {

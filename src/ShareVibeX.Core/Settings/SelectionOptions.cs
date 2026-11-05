@@ -7,6 +7,7 @@ public sealed record SelectionOptions
     public CaptureOutlineStyle OutlineStyle {get;init;}
     public string OutlineColor {get;init;}="#78D3FF";
     public int OutlineOpacity {get;init;}=100;
+    public int OutlineThickness {get;init;}=1;
     public bool ShowRecordingOutline {get;init;}=true;
     public bool DetectWindows {get;init;}
     public bool DetectControls {get;init;}

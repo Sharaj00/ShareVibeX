@@ -17,12 +17,17 @@ public sealed class DesktopCapturePresentation(App app, IDesktopCapture capture,
     private ShareVibeX.App.Notifications.CompletionNotice? pendingNotice;
     private CapturedFrame? pendingPreview;
     private readonly WindowVisibilitySnapshot visibility = new();
+    private PixelRect? foregroundBounds;
+    private bool exclusiveFullscreen;
     public bool RepeatRequested { get; private set; }
 
     public async Task HideAndWaitAsync(CancellationToken token)
     {
         RepeatRequested = false;pendingNotice=null;pendingPreview=null;feedback?.Block();
         app.History.Current=new(WindowsCaptureApplication.GetName(),DateTime.Now);
+        foregroundBounds=WindowsCaptureApplication.GetForegroundBounds();
+        exclusiveFullscreen=WindowsCompletionPlatform.IsExclusiveFullscreenForeground();
+        if(exclusiveFullscreen)return;
         var desktop = (IClassicDesktopStyleApplicationLifetime)app.ApplicationLifetime!;
         visibility.Hide(desktop.Windows);
         DiagnosticLog.Write("Presentation: surfaces hidden");
@@ -34,8 +39,35 @@ public sealed class DesktopCapturePresentation(App app, IDesktopCapture capture,
         await Task.Delay(80,token);
     }
 
-    public Task<CaptureSession?> SelectAsync(DesktopLayout layout, CancellationToken token) => new SelectionOverlayController(capture,clipboard,app.Settings,
-        record:recordStart??(recording is null?null:recording.StartAsync),history:app.History,historyContext:app.History.Current,completed:(saved,path)=>pendingNotice=new(Loc.T(saved?"Screenshot saved":"Screenshot copied"),path,pendingPreview,FileName:ShareVibeX.App.History.CaptureHistory.FileName(app.History.Current,ShareVibeX.App.Capture.ImageEncoding.Extension(app.Settings.ImageFormat))),previewReady:frame=>{if(app.Settings.CompletionDefaults.ShowNotifications)pendingPreview=ShareVibeX.App.Notifications.CompletionPreview.CreateFrame(frame);}){MicrophoneProbe=MicrophoneProbe}.SelectAsync(layout,token);
+    public async Task<CaptureSession?> SelectAsync(DesktopLayout layout, CancellationToken token)
+    {
+        if(exclusiveFullscreen)
+        {
+            DiagnosticLog.Write("Capture: exclusive fullscreen monitor copy");
+            var snapshot=await capture.CaptureAsync(token);
+            var bounds=foregroundBounds??snapshot.Bounds;
+            var monitor=snapshot.Monitors.MaxBy(m=>
+            {
+                var area=m.Bounds.Intersect(bounds);
+                return (long)area.Width*area.Height;
+            })??throw new InvalidOperationException(Loc.T("No valid desktop monitor layout is available."));
+            var exporter=new BitmapExportService();
+            var frame=exporter.Crop(snapshot,monitor.Bounds);
+            token.ThrowIfCancellationRequested();
+            var owner=new Window();
+            try{await clipboard.CopyAsync(owner,frame);}
+            finally{owner.Close();}
+            var settings=app.Settings;
+            await app.History.StoreAsync(app.History.Current,ImageEncoding.Extension(settings.ImageFormat),
+                (path,ct)=>exporter.SaveImageAsync(frame,path,settings.ImageFormat,settings.ImageQuality,ct),token);
+            app.ReportStatus(Loc.T("Fullscreen screenshot copied"));
+            return null;
+        }
+        var fullscreenWindow=foregroundBounds is {} window&&layout.Monitors.Any(m=>window.Intersect(m.Bounds)==m.Bounds);
+        return await new SelectionOverlayController(capture,clipboard,app.Settings,
+            record:recordStart??(recording is null?null:recording.StartAsync),history:app.History,historyContext:app.History.Current,completed:(saved,path)=>pendingNotice=new(Loc.T(saved?"Screenshot saved":"Screenshot copied"),path,pendingPreview,FileName:ShareVibeX.App.History.CaptureHistory.FileName(app.History.Current,ImageEncoding.Extension(app.Settings.ImageFormat))),previewReady:frame=>{if(app.Settings.CompletionDefaults.ShowNotifications)pendingPreview=ShareVibeX.App.Notifications.CompletionPreview.CreateFrame(frame);})
+            {MicrophoneProbe=MicrophoneProbe,ShowActivated=!fullscreenWindow}.SelectAsync(layout,token);
+    }
 
     public Task ShowResultAsync(CaptureSession session, CancellationToken token) => Task.CompletedTask;
 

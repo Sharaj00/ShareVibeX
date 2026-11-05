@@ -82,6 +82,8 @@ public sealed class RecordingSessionController
     }
     public event Action? Changed;
     public event Action<RecordingSessionOutcome>? Finished;
+    public int CountdownRemaining {get;private set;}
+
     public async Task StartAsync(RecordingOptions value,PixelRect region,RecordingSourceChoices sources,CancellationToken token=default,int countdownSeconds=0,CaptureBackend captureBackend=CaptureBackend.Gdi,MonitorInfo? movableMonitor=null)
     {
         if(!Enum.IsDefined(captureBackend))throw new ArgumentOutOfRangeException(nameof(captureBackend));
@@ -96,13 +98,15 @@ public sealed class RecordingSessionController
             State=RecordingSessionState.Starting;
         }
         using var cancel=CancellationTokenSource.CreateLinkedTokenSource(token,controlsLifetime.Token);lock(gate)startup=cancel;
+        using var countdownCancellation=CancellationTokenSource.CreateLinkedTokenSource(cancel.Token);
+        Task countdown=Task.CompletedTask;
         Changed?.Invoke();await transition.WaitAsync();
         try
         {
             cancel.Token.ThrowIfCancellationRequested();Workspace=RecordingWorkspace.Create(root,value,region);
-                        for(var remaining=Math.Clamp(countdownSeconds,0,10);remaining>0;remaining--)
-            {LastError=Loc.F("Starting in {0}…",remaining);Changed?.Invoke();await Task.Delay(1000,cancel.Token);}
-            LastError=null;await StartSegmentAsync(cancel.Token);State=RecordingSessionState.Recording;Changed?.Invoke();
+            countdown=CountDownAsync(Math.Clamp(countdownSeconds,0,10),countdownCancellation.Token);
+            await StartSegmentAsync(cancel.Token,countdown);
+            State=RecordingSessionState.Recording;Changed?.Invoke();
         }
         catch(OperationCanceledException)when(cancel.IsCancellationRequested)
         {
@@ -114,9 +118,30 @@ public sealed class RecordingSessionController
         {
             var result=Failure(error);await SaveManifestAsync("Failed",result);Complete(result,false);throw;
         }
-        finally{transition.Release();lock(gate){if(ReferenceEquals(startup,cancel))startup=null;startingDone.TrySetResult();}Changed?.Invoke();}
+        finally
+        {
+            countdownCancellation.Cancel();
+            try{await countdown;}catch(OperationCanceledException)when(countdownCancellation.IsCancellationRequested){}
+            transition.Release();
+            lock(gate){if(ReferenceEquals(startup,cancel))startup=null;startingDone.TrySetResult();}
+            Changed?.Invoke();
+        }
     }
-    private async Task StartSegmentAsync(CancellationToken token)
+    private async Task CountDownAsync(int seconds,CancellationToken token)
+    {
+        var start=System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            while(TimeSpan.FromSeconds(seconds)-System.Diagnostics.Stopwatch.GetElapsedTime(start) is {Ticks:>0} remaining)
+            {
+                CountdownRemaining=(int)Math.Ceiling(remaining.TotalSeconds);
+                Changed?.Invoke();
+                await Task.Delay(remaining-TimeSpan.FromSeconds(CountdownRemaining-1),token);
+            }
+        }
+        finally{CountdownRemaining=0;Changed?.Invoke();}
+    }
+    private async Task StartSegmentAsync(CancellationToken token,Task? startGate=null)
     {
         var remaining=options!.DurationSeconds>0?Math.Max(0,options.DurationSeconds-(RecordedDuration()?.TotalSeconds??0)):0;
         var currentOptions=Sources.Apply(options.CaptureOptions()) with{DurationSeconds=remaining};
@@ -124,7 +149,7 @@ public sealed class RecordingSessionController
         var paths=Workspace!.CreateSegment(currentOptions.Extension);segmentWorking=paths.Working;
         await Workspace.WriteManifestAsync(State.ToString(),token:token,segments:segments,currentRegion:Region);
         var started=await engine.StartAsync(new(currentOptions,Region,paths.Capture,live||Sources.WithAudio)
-            {WorkingPath=paths.Working,LiveSources=live?Sources:null,FinalAnimationOptions=options.IsAnimation?options:null,CaptureBackend=captureBackend,MovableMonitor=movableMonitor},token);
+            {WorkingPath=paths.Working,LiveSources=live?Sources:null,FinalAnimationOptions=options.IsAnimation?options:null,CaptureBackend=captureBackend,MovableMonitor=movableMonitor},token,startGate);
         captureBackend=started.EffectiveCaptureBackend;
         EffectiveCaptureBackend=captureBackend;CaptureFallbackReason??=started.CaptureFallbackReason;
         run=started;segmentHasAudio=live||Sources.WithAudio;everAudio|=Sources.WithAudio;Width=started.Width;Height=started.Height;LastError=null;

@@ -27,7 +27,7 @@ public sealed class RecordingService
     public RecordingService(RecordingEngine engine,string? root=null,Func<CaptureBackend>? preference=null)
     {
         this.preference=preference??(()=>CaptureBackend.Gdi);
-        Session=new(engine,root??Path.Combine(AppContext.BaseDirectory,"data","recordings"));
+        Session=new(engine,root??Path.Combine(ShareVibeX.Core.IO.PortablePaths.BaseDirectory,"data","recordings"));
         Session.Changed+=()=>Changed?.Invoke();Session.Finished+=outcome=>Finished?.Invoke(outcome);
     }
     public Task StartAsync(RecordingStartRequest request,CancellationToken token)=>Session.StartAsync(request.Options,request.Region,request.Sources,token,request.CountdownSeconds,preference(),request.MovableMonitor);

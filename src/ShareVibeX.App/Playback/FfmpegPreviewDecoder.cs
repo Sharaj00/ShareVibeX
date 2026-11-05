@@ -12,7 +12,7 @@ public sealed class FfmpegPreviewDecoderFactory(Func<string?,string>? resolve=nu
     {
         var opening=Task.Run<IPreviewDecoder>(()=>
         {
-            var executable=(resolve??(value=>FfmpegLocator.Resolve(value,AppContext.BaseDirectory)))(media.FfmpegPath);
+            var executable=(resolve??(value=>FfmpegLocator.Resolve(value,ShareVibeX.Core.IO.PortablePaths.BaseDirectory)))(media.FfmpegPath);
             var video=new RawPreviewProcess(executable,PreviewDecoderCommand.Video(media,format,position));
             try{return new Decoder(video,audio&&media.HasAudio?new RawPreviewProcess(executable,PreviewDecoderCommand.Audio(media,position)):null);}
             catch{video.DisposeAsync().AsTask().GetAwaiter().GetResult();throw;}

@@ -10,6 +10,11 @@ public sealed record AppSettings(int SchemaVersion = 2, ThemeMode Theme = ThemeM
     string CaptureHotkey = "Ctrl+PrintScreen", string? OutputDirectory = null,
     ImageFormat ImageFormat = ImageFormat.Png, int ImageQuality = 90, RecordingOptions? Recording = null, int ButtonSize = 40, int RecordingCountdownSeconds = 0, bool HistoryEnabled = false, string? HistoryDirectory = null, bool OpenSettingsOnStartup = false, bool StartWithWindows = false, TrayAction TraySingleClick = TrayAction.CaptureRegion, TrayAction TrayDoubleClick = TrayAction.OpenSettings, TrayAction TrayMiddleClick = TrayAction.None, ShareVibeX.Core.Localization.AppLanguage Language = ShareVibeX.Core.Localization.AppLanguage.English, CompletionOptions? Completion = null, SelectionOptions? Selection = null, ShareVibeX.Core.Capture.CaptureBackend CaptureBackend = ShareVibeX.Core.Capture.CaptureBackend.Automatic, bool CreateMonthFolder = true)
 {
+    public static AppSettings FactoryDefaults {get;}=new(
+        CaptureHotkey:"PrintScreen",
+        CaptureBackend:ShareVibeX.Core.Capture.CaptureBackend.Gdi,
+        Selection:new(){OutlineThickness=2,DetectWindows=true,DetectControls=true,RestrictToActiveMonitor=true});
+
     [JsonIgnore] public SelectionOptions SelectionDefaults => Selection ?? new SelectionOptions();
     [JsonIgnore] public CompletionOptions CompletionDefaults => Completion ?? new CompletionOptions();
     public static string DefaultCaptureDirectory => Path.Combine(

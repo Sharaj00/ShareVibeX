@@ -17,7 +17,7 @@ public sealed class EditorToolbar:Border
     private readonly WheelThickness width;
     private bool syncing;
     public TextBlock Status {get;}=Ui.Text("",12);
-    public EditorToolbar(CaptureEditorState state,Action refresh,Func<bool,Task> export,Action cancel)
+    public EditorToolbar(CaptureEditorState state,Action refresh,Func<bool,Task> export,Action cancel,Action? pickColor=null)
     {
         Classes.Add("card");CapturePanelStyle.Apply(this);Padding=new Thickness(8);CornerRadius=new CornerRadius(8);
         var row=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center};
@@ -35,7 +35,18 @@ public sealed class EditorToolbar:Border
         AutomationProperties.SetName(color,"Annotation color palette");ToolTip.SetTip(color,Loc.T("Open color palette"));
         color.ColorChanged+=(_,args)=>{if(!syncing){state.SetColor(args.NewColor.ToUInt32());refresh();}};
         width=new WheelThickness(state,refresh){Width=48,Height=40,Margin=new Thickness(4,2)};
-        row.Children.Add(effect);row.Children.Add(color);row.Children.Add(width);
+        row.Children.Add(effect);row.Children.Add(color);
+        if(pickColor is not null)
+        {
+            var eyedropper=Ui.Button("",pickColor);
+            CapturePanelStyle.Apply(eyedropper);
+            eyedropper.Width=40;eyedropper.Height=40;eyedropper.Margin=new Thickness(2);eyedropper.Padding=new Thickness(8);
+            eyedropper.Content=new PathIcon{Data=Geometry.Parse("M15,2 L22,9 L18,13 L16,11 L7,20 L2,22 L4,17 L13,8 L11,6 Z"),Width=22,Height=22};
+            AutomationProperties.SetName(eyedropper,"Pick color from screenshot");
+            ToolTip.SetTip(eyedropper,Loc.T("Pick color from screenshot"));
+            row.Children.Add(eyedropper);
+        }
+        row.Children.Add(width);
         Button ExportIcon(string name,string hint,string data,bool save)
         {
             var button=Ui.Button("",async()=>await export(save),!save);CapturePanelStyle.Apply(button);

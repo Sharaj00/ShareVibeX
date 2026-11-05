@@ -93,8 +93,9 @@ public sealed class RecordingControlTests(UiTestFixture ui)
     public Task RegionBorderUsesOneHollowSurfaceAndClosesIt()=>ui.Run(()=>
     {
         using var frame=new RecordingRegionFrame();var region=new PixelRect(100,100,300,200);var calls=0;
-        frame.Show(region,[new("screen",new(0,0,800,600),1)],_=>{calls++;return true;},(_,w,h)=>w==302&&h==202);
-        Assert.Equal(1,calls);var border=Assert.Single(frame.Windows);Assert.Equal(302,border.Width);Assert.Equal(202,border.Height);
+        frame.Show(region,[new("screen",new(0,0,800,600),1)],_=>{calls++;return true;},(_,w,h)=>w==310&&h==210,new(){OutlineThickness=9});
+        Assert.Equal(1,calls);var border=Assert.Single(frame.Windows);Assert.Equal(310,border.Width);Assert.Equal(210,border.Height);
+        frame.MoveTo(new(120,140,300,200));Assert.Equal(new Avalonia.PixelPoint(115,135),border.Position);
         frame.Dispose();Assert.All(frame.Windows,w=>Assert.False(w.IsVisible));
     });
     [Fact]

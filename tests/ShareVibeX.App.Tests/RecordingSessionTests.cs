@@ -15,6 +15,20 @@ public sealed class RecordingSessionTests : IDisposable
         Assert.True(session.IsActive);await (cancel?session.CancelAsync():session.StopAsync()).WaitAsync(TimeSpan.FromSeconds(3));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>starting);Assert.Null(factory.Path);Assert.False(session.IsActive);
     }
+    [Fact]
+    public async Task RecordingEnginePreparesAudioWhileWaitingForStartGate()
+    {
+        var factory=new Factory();var audio=new Audio();var gate=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var engine=new RecordingEngine(new Probe(),factory,audio,_=>"ffmpeg.exe");
+        using var cancellation=new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var start=engine.StartAsync(new(new(),new(0,0,100,100),Path.Combine(root,"test.mp4"),true),cancellation.Token,gate.Task);
+        await audio.Opened.Task.WaitAsync(cancellation.Token);
+        Assert.False(factory.Started.Task.IsCompleted);
+        gate.TrySetResult();
+        var run=await start;
+        await File.WriteAllTextAsync(factory.Path!,"video");
+        Assert.True((await run.StopAsync()).Success);
+    }
     private readonly string root=Path.Combine(Path.GetTempPath(),"ShareVibeX-session-tests",Guid.NewGuid().ToString("N"));
     [Theory]
     [InlineData(false,false,null)] [InlineData(true,false,AudioSource.System)]
@@ -138,7 +152,8 @@ public sealed class RecordingSessionTests : IDisposable
     private sealed class Audio:IRecordingAudioFactory
     {
         public RecordingOptions? Options;
-        public Task<IRecordingAudioSource> OpenAsync(RecordingOptions options,CancellationToken token){Options=options;return Task.FromResult<IRecordingAudioSource>(new Source());}
+        public TaskCompletionSource Opened {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<IRecordingAudioSource> OpenAsync(RecordingOptions options,CancellationToken token){Options=options;Opened.TrySetResult();return Task.FromResult<IRecordingAudioSource>(new Source());}
         public Task<IReadOnlyList<RecordingAudioDevice>> GetDevicesAsync(CancellationToken token)=>throw new InvalidOperationException("No device enumeration permitted.");
     }
     private sealed class Source:IRecordingAudioSource

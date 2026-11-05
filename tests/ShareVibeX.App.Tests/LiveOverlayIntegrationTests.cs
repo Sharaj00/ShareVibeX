@@ -17,6 +17,18 @@ namespace ShareVibeX.App.Tests;
 [Collection("Avalonia UI")]
 public sealed class LiveOverlayIntegrationTests(UiTestFixture ui)
 {
+    [Fact]
+    public Task NonActivatingSelectionStillSupportsMouseSelectionAndQuickCopy()=>ui.Run(async()=>
+    {
+        using var test=new Harness(showActivated:false);
+        var running=test.Start();
+        Assert.True(test.Window.IsVisible);
+        Assert.False(test.Window.ShowActivated);
+        test.SelectRegion();
+        test.Window.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Enter});
+        Assert.NotNull(await running.WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.NotNull(test.Copied);
+    });
     [Theory]
     [InlineData(true)] [InlineData(false)]
     public Task VideoStartsFromSameRegionWithOverlaysHiddenAndNoStillCapture(bool withAudio) => ui.Run(async () =>
@@ -27,8 +39,19 @@ public sealed class LiveOverlayIntegrationTests(UiTestFixture ui)
         {
             var running=test.Start();test.SelectRegion();test.Click("Video");
             if(!withAudio)test.Window.GetVisualDescendants().OfType<CaptureModeToolbar>().Single().SetSources(new(false,false));
+            var cursor=test.Window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>()
+                .Single(b=>Avalonia.Automation.AutomationProperties.GetName(b)=="Include cursor");
+            Assert.True(cursor.IsChecked);
+            cursor.IsChecked=false;
+            test.Window.UpdateLayout();
+            var countdown=test.Window.GetVisualDescendants().OfType<Border>()
+                .Single(b=>Avalonia.Automation.AutomationProperties.GetName(b)=="Recording countdown");
+            var wheelPoint=countdown.TranslatePoint(new Point(countdown.Bounds.Width/2,countdown.Bounds.Height/2),test.Window)!.Value;
+            test.Window.MouseWheel(wheelPoint,new Vector(0,1));
+            Assert.Equal("1s",Assert.IsType<TextBlock>(countdown.Child).Text);
             test.Click("Record");
             Assert.Null(await running.WaitAsync(TimeSpan.FromSeconds(3)));Assert.NotNull(requested);
+            Assert.False(requested.Options.IncludeCursor);Assert.Equal(1,requested.CountdownSeconds);
             Assert.Equal(withAudio,requested.Sources.WithAudio);Assert.Equal(new ShareVibeX.Core.Capture.PixelRect(100,150,140,80),requested.Region);
             Assert.True(hidden);Assert.Equal(0,test.Source.Captures);
             Assert.NotNull(requested.ToolbarPlacement);Assert.True(requested.ToolbarPlacement.Width>0);Assert.True(requested.ToolbarPlacement.Height>0);
@@ -65,6 +88,11 @@ public sealed class LiveOverlayIntegrationTests(UiTestFixture ui)
         var toolbar = test.Window.GetVisualDescendants().OfType<CaptureModeToolbar>().Single();
         Assert.False(toolbar.IsVisible);
         test.Window.MouseUp(new Point(240, 230), MouseButton.Left); Assert.True(toolbar.IsVisible);
+        test.Window.UpdateLayout();
+        Assert.InRange(toolbar.Bounds.Center.X,169,171);
+        test.Click("Video");
+        test.Window.UpdateLayout();
+        Assert.InRange(toolbar.Bounds.Center.X,169,171);
         test.Window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape });
         Assert.Null(await running.WaitAsync(TimeSpan.FromSeconds(3))); Assert.Equal(0, test.Source.Captures);
     });
@@ -97,6 +125,36 @@ public sealed class LiveOverlayIntegrationTests(UiTestFixture ui)
         Assert.Equal(1, test.Source.Captures); Assert.Equal(87, test.Copied!.Bgra32[0]);
     });
     [Fact]
+    public Task EyedropperSamplesTheFrozenFrameWithoutReselectingTheRegion()=>ui.Run(async()=>
+    {
+        using var test=new Harness();var running=test.Start();test.SelectRegion();
+        test.Source.Value=123;test.Click("Edit screenshot");
+        test.Click("Pick color from screenshot");
+        test.Window.MouseDown(new Point(120,170),MouseButton.Left);
+        test.Window.MouseUp(new Point(120,170),MouseButton.Left);
+        var palette=test.Window.GetLogicalDescendants().OfType<ColorPicker>().Single();
+        Assert.Equal(0xff00007bu,palette.Color.ToUInt32());
+        test.Window.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Enter});
+        Assert.NotNull(await running.WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.Equal(140,test.Copied!.Width);
+    });
+    [Fact]
+    public Task VideoSetupGripMovesTheRegionThatWillBeRecorded()=>ui.Run(async()=>
+    {
+        RecordingStartRequest? request=null;
+        using var test=new Harness((value,_)=>{request=value;return Task.CompletedTask;});
+        var running=test.Start();test.SelectRegion();test.Click("Video");test.Window.UpdateLayout();
+        var grip=test.Window.GetVisualDescendants().OfType<Border>().Single(c=>Avalonia.Automation.AutomationProperties.GetName(c)=="Move recording region");
+        Assert.True(grip.IsVisible);
+        var point=grip.TranslatePoint(new Point(grip.Bounds.Width/2,5),test.Window)!.Value;
+        test.Window.MouseDown(point,MouseButton.Left);
+        test.Window.MouseMove(new Point(point.X+30,point.Y+24));
+        test.Window.MouseUp(new Point(point.X+30,point.Y+24),MouseButton.Left);
+        test.Click("Record");
+        await running.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal(new ShareVibeX.Core.Capture.PixelRect(130,174,140,80),request!.Region);
+    });
+    [Fact]
     public Task VideoAndReturnToChoosingStayLiveWithoutCapturing() => ui.Run(async () =>
     {
         using var test = new Harness(); var running = test.Start(); test.SelectRegion();
@@ -122,12 +180,12 @@ public sealed class LiveOverlayIntegrationTests(UiTestFixture ui)
         public CapturedFrame? Copied;
         public Window Window => windows.Single();
         public EditorSurface Surface => Window.GetVisualDescendants().OfType<EditorSurface>().Single();
-        public Harness(Func<RecordingStartRequest,CancellationToken,Task>? record=null)
+        public Harness(Func<RecordingStartRequest,CancellationToken,Task>? record=null,bool showActivated=true)
         {
             Source = new Source(windows);
-            controller = new(Source, clipboard, new AppSettings(), (_, frame) => { Copied = frame; return Task.CompletedTask; },
+            controller = new SelectionOverlayController(Source, clipboard, new AppSettings(), (_, frame) => { Copied = frame; return Task.CompletedTask; },
                 _ => { Assert.All(windows, window => Assert.False(window.IsVisible)); return Task.CompletedTask; },
-                () => { var window = new Window(); windows.Add(window); return window; },record:record);
+                () => { var window = new Window(); windows.Add(window); return window; },record:record){ShowActivated=showActivated};
         }
         public Task<CaptureSession?> Start() => controller.SelectAsync(DesktopLayout.FromMonitors(Source.GetMonitors()), default);
         public void SelectRegion()

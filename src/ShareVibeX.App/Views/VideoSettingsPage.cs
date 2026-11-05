@@ -16,6 +16,7 @@ namespace ShareVibeX.App.Views;
 public sealed class VideoSettingsPage : UserControl, IDisposable
 {
     private RecordingOptions draft;
+    internal event Action? SettingsChanged;
     private readonly Control animationPanel,loopCount,animationLossless,animationCompression,rateControl,gifColors,gifDither;
     private readonly CheckBox customMode;
     private readonly StackPanel audioSettings;
@@ -53,10 +54,13 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
             ItemTemplate=new Avalonia.Controls.Templates.FuncDataTemplate<CaptureBackend>((value,_)=>Ui.Text(value switch
             {CaptureBackend.Automatic=>"Automatic (prefer WGC)",CaptureBackend.WindowsGraphicsCapture=>"Windows Graphics Capture",_=>"GDI (compatibility)"}))};
         AutomationProperties.SetName(captureMethod,"Screenshot capture method");
+        probeStatus.MaxLines=2;
+        probeStatus.TextTrimming=TextTrimming.CharacterEllipsis;
+        probeStatus.Bind(ToolTip.TipProperty,probeStatus.GetObservable(TextBlock.TextProperty));
 
         this.probe = probe ?? (async (path, token) =>
         {
-            var snapshot=draft;var executable=FfmpegLocator.Resolve(path,AppContext.BaseDirectory);
+            var snapshot=draft;var executable=FfmpegLocator.Resolve(path,ShareVibeX.Core.IO.PortablePaths.BaseDirectory);
             var result=await new FfmpegProbe(new ProcessCommandRunner()).TestAsync(executable,token);
             if(!snapshot.UseCustomCommand&&result.Capabilities.Encoders.Contains(snapshot.EncoderName))
                 await new FfmpegEncoderProbe(new ProcessCommandRunner()).ValidateAsync(executable,snapshot,token);
@@ -107,6 +111,7 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
         encoder.MaxDropDownHeight = 220;
         preset = Choice("Encoder preset", RecordingValidation.Presets(options.Encoder), o => o.Preset, (o, v) => o with { Preset = v });
         tune = Choice("Encoder tune", RecordingValidation.Tunes(options.Encoder), o => o.Tune, (o, v) => o with { Tune = v });
+        tune.ItemTemplate=new FuncDataTemplate<string>((value,_)=>Ui.Text(value==""?"Auto":value,13));
         var rate = Choice("Rate control", Enum.GetValues<VideoRateControl>(), o => o.RateControl, (o, v) => o with { RateControl = v });
         rateControl=rate;
         loopCount=Number("Animation loop count",0,65535,o=>o.AnimationLoopCount,(o,v)=>o with{AnimationLoopCount=(int)v});
@@ -130,10 +135,18 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
         var reset = Ui.Button(Loc.T("Reset recording options"), () => Apply(new RecordingOptions())); SetName(reset, "Reset recording options");
         previewMode = new ComboBox { ItemsSource = new[] { Loc.T("Silent / GIF-style"), Loc.T("With audio") }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
         SetName(previewMode, "Command preview audio mode"); previewMode.SelectionChanged += (_, _) => Update();
-        var cursor = Toggle("Include cursor", o => o.IncludeCursor, (o,v) => o with { IncludeCursor = v }); cursor.Content = Loc.T("Cursor");
+        var cursor = Toggle("Include cursor", o => o.IncludeCursor, (o,v) => o with { IncludeCursor = v }); ToolTip.SetTip(cursor,Loc.T("Include cursor"));
         var fps = Number("Frame rate", 1, 240, o => o.FrameRate, (o,v) => o with { FrameRate = (int)v });
-        fps.MinWidth=140;
-        var fpsCursor = new Grid { ColumnDefinitions = new("140,*"), ColumnSpacing = 8, Children = { fps, cursor } }; Grid.SetColumn(cursor, 1);
+        fps.MinWidth=70;
+        fps.ShowButtonSpinner=false;
+        ToolTip.SetTip(fps,Loc.T("Scroll to change the frame rate."));
+        fps.AddHandler(PointerWheelChangedEvent,(_,e)=>
+        {
+            if(e.Delta.Y==0)return;
+            fps.Value=Math.Clamp((fps.Value??draft.FrameRate)+Math.Sign(e.Delta.Y),fps.Minimum,fps.Maximum);
+            e.Handled=true;
+        },Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        var fpsCursor = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8, Children = { fps, cursor } }; Grid.SetColumn(cursor, 1);
         var qualityValue = new Grid { Children = { videoQuality, videoBitrate } };
         var qualityControls = new Grid { ColumnDefinitions = new("*,*"), ColumnSpacing = 8, Children = { rate, qualityValue } }; Grid.SetColumn(qualityValue, 1);
         container=Choice("Video container",RecordingValidation.Containers(options.Encoder),o=>o.Container,(o,v)=>o with{Container=v,AudioEncoder=v==VideoContainer.Webm?AudioEncoder.Libopus:v==VideoContainer.Mp4?AudioEncoder.Aac:o.AudioEncoder,AudioSampleRate=v==VideoContainer.Webm?48000:o.AudioSampleRate});
@@ -145,7 +158,6 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
             Field("Container", container),animationPanel);
         var audioColumn = Panel(
             Field("Audio source", Choice("Audio source", Enum.GetValues<AudioSource>(), o => o.AudioSource, (o,v) => o with { AudioSource = v })),
-            Field("Device", directShow, Loc.T("Exact DirectShow audio device name, when selected. Select native endpoints on the Devices tab.")),
             Field("Audio encoder", Choice("Audio encoder", Enum.GetValues<AudioEncoder>(), o => o.AudioEncoder, (o,v) => o with { AudioEncoder = v })),
             Field("Bitrate (kbps)", Number("Audio bitrate", 32, 512, o => o.AudioBitrateKbps, (o,v) => o with { AudioBitrateKbps = (int)v })),
             Field("Sample rate", Choice("Audio sample rate", new[] { 44100, 48000 }, o => o.AudioSampleRate, (o,v) => o with { AudioSampleRate = v })),
@@ -157,7 +169,8 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
                 Field("Algorithm", Choice("Scaling algorithm", Enum.GetValues<ScaleAlgorithm>(), o => o.ScaleAlgorithm, (o,v) => o with { ScaleAlgorithm = v }))),
             Panel(Field("Target width", targetWidth), Field("Target height", targetHeight), Field("Aspect ratio", aspect),
                 Field("Limit (sec)", Number("Recording duration", 0, 86400, o => (decimal)o.DurationSeconds, (o,v) => o with { DurationSeconds = (double)v }), Loc.T("Zero means stop manually. Custom mode needs output -t $duration$ when positive."))));
-        var preview = Panel(previewMode, Ui.Text("Example only: 1920 × 1080 at (0, 0); pipe and filename are placeholders.", 12, true), dimensions, command);
+        ToolTip.SetTip(command,Loc.T("Example only: 1920 × 1080 at (0, 0); pipe and filename are placeholders."));
+        var preview = Panel(previewMode,dimensions,command);
         var deviceStatus=Ui.Text("Use the Windows default endpoints or refresh to choose active devices. Refresh lists endpoints; only Record starts capture.",12,true);
         var playback=DeviceCombo("Playback device",true);
         var microphone=DeviceCombo("Microphone device",false);
@@ -180,23 +193,24 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
             finally{if(generation==deviceGeneration)deviceQuery=null;syncing=false;}
         });
         AutomationProperties.SetName(refreshDevices,"Refresh audio devices");
-        var devicesPage=Panel(Field("Playback",playback),Field("Microphone",microphone),refreshDevices,deviceStatus);
+        var devicesPage=Panel(Field("Playback",playback),Field("Microphone",microphone),Field("DirectShow audio device",directShow,Loc.T("Exact DirectShow audio device name, when selected. Select native endpoints on the Devices tab.")),refreshDevices,deviceStatus);
         devicesSettings=devicesPage;
-        var tabs = new TabControl { MinHeight = 290, ItemsSource = new[] {
-            new TabItem { Header = Ui.Text("Encoding",14), Content = Columns(videoColumn, audioColumn) },
-            new TabItem { Header = Ui.Text("Scaling",14), Content = scaling },new TabItem{Header=Ui.Text("Devices",14),Content=devicesPage}, new TabItem { Header = Ui.Text("Preview",14), Content = preview } }, SelectedIndex = 0 };
-        AutomationProperties.SetName(tabs, "Video settings tabs");
         var customToggle = Toggle("Use custom command", o => o.UseCustomCommand, (o,v) => o with { UseCustomCommand = v }); customToggle.Content = Loc.T("Use custom command");customMode=customToggle;
-        var templateHelp = new Expander { Header = Loc.T("Template help"), Content = Ui.Text("Custom mode overrides encoder, quality, preset, tune and additional arguments. Placeholders: $fps$, $area_x$, $area_y$, $area_width$, $area_height$, $cursor$, $scale_filter$, $duration$, one final $output$. Standalone $audio_input$ and $audio_options$ adapt both audio modes. No shell; extra outputs and unsupported options are rejected.", 12, true) };
+        var templateHelp=Ui.Text("Custom mode overrides encoder, quality, preset, tune and additional arguments. Placeholders: $fps$, $area_x$, $area_y$, $area_width$, $area_height$, $cursor$, $scale_filter$, $duration$, one final $output$. Standalone $audio_input$ and $audio_options$ adapt both audio modes. No shell; extra outputs and unsupported options are rejected.",12,true);
+        ToolTip.SetTip(customToggle,templateHelp);
         reset.HorizontalAlignment = HorizontalAlignment.Right;
         var timings=Toggle("Show video timings",o=>o.ShowVideoTimings,(o,v)=>o with{ShowVideoTimings=v});timings.Content=Loc.T("Show video timings");
         var advanced=new Expander{Header=Loc.T("Advanced FFmpeg options"),HorizontalAlignment=HorizontalAlignment.Stretch,
-            Content=Panel(Ui.Text("Additional command line arguments",13),additional,customToggle,custom,templateHelp,reset)};
+            Content=Panel(Ui.Text("Additional command line arguments",13),additional,customToggle,custom,reset)};
         AutomationProperties.SetName(advanced,"Advanced FFmpeg options");
-        preview.Children.Add(timings);preview.Children.Add(advanced);
+        var tabs = new TabControl { ItemsSource = new[] {
+            new TabItem { Header = Ui.Text("Encoding",14), Content = Columns(videoColumn, audioColumn) },
+            new TabItem { Header = Ui.Text("Scaling",14), Content = scaling },new TabItem{Header=Ui.Text("Devices",14),Content=devicesPage}, new TabItem { Header = Ui.Text("Preview",14), Content = Columns(preview,Panel(timings,advanced)) } }, SelectedIndex = 0 };
+        AutomationProperties.SetName(tabs, "Video settings tabs");
         var root = Panel(tool, probeStatus, tabs);
         root.Spacing = 6; Content = root;
         Apply(options);RefreshExecutable();
+        captureMethod.SelectionChanged+=(_,_)=>{if(captureMethod.SelectedItem is CaptureBackend)SettingsChanged?.Invoke();};
     }
 
     public RecordingOptions GetOptions()
@@ -239,10 +253,11 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
         container.ItemsSource=RecordingValidation.Containers(draft.Encoder);
         foreach (var setter in setters) setter(options);
         syncing = false; if (pathChanged) InvalidateProbe(); Update();
+        SettingsChanged?.Invoke();
     }
     private void Change(RecordingOptions options)
     {
-        if (syncing || disposed) return;
+        if (syncing || disposed || options==draft) return;
         var pathChanged = options.FfmpegPath != draft.FfmpegPath; var encoderChanged = options.Encoder != draft.Encoder;
         if (encoderChanged)
         {
@@ -251,12 +266,13 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
         if(options.Container!=draft.Container){Apply(options);return;}
         draft = options;
         if (pathChanged) InvalidateProbe(); Update();
+        SettingsChanged?.Invoke();
     }
     private void RefreshExecutable()
     {
         try
         {
-            var path=FfmpegLocator.Resolve(draft.FfmpegPath,AppContext.BaseDirectory);
+            var path=FfmpegLocator.Resolve(draft.FfmpegPath,ShareVibeX.Core.IO.PortablePaths.BaseDirectory);
             executable.PlaceholderText=path;
             ToolTip.SetTip(executable,path);
             ffmpegFound=true;
@@ -295,6 +311,24 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
         videoBitrate.IsEnabled = !draft.UseCustomCommand && draft.RateControl == VideoRateControl.Bitrate;
         preset.IsEnabled = !draft.UseCustomCommand && RecordingValidation.Presets(draft.Encoder).Length>1;
         tune.IsEnabled = !draft.UseCustomCommand && RecordingValidation.Tunes(draft.Encoder).Length>1;
+        ToolTip.SetTip(preset,Loc.F("Auto uses {0}.",RecordingValidation.AutoPreset(draft.Encoder))+" "+Loc.T(draft.Encoder switch
+        {
+            VideoEncoder.H264Nvenc or VideoEncoder.HevcNvenc=>"NVENC P1 prioritizes encoding speed. P7 prioritizes compression efficiency.",
+            VideoEncoder.H264Amf or VideoEncoder.HevcAmf=>"AMF speed prioritizes throughput, balanced is a compromise, and quality prioritizes compression efficiency.",
+            VideoEncoder.H264Qsv or VideoEncoder.HevcQsv=>"Quick Sync veryfast favors speed. Slower presets spend more time on compression.",
+            VideoEncoder.Libvpx or VideoEncoder.LibvpxVp9=>"VP8 and VP9 use cpu-used. Higher values encode faster and generally compress less efficiently.",
+            VideoEncoder.LibaomAv1=>"AOM AV1 uses cpu-used. Lower values spend more time on compression.",
+            VideoEncoder.Libsvtav1=>"SVT-AV1 uses numbered presets. Lower numbers favor compression efficiency and higher numbers favor speed.",
+            _=>"Ultrafast favors speed. Slower x264 and x265 presets spend more CPU time to compress more efficiently."
+        }));
+        var tuneHelp=draft.Encoder switch
+        {
+            VideoEncoder.Libx264=>Loc.T("Film, animation, grain and stillimage optimize for the corresponding content. Fastdecode reduces decoding work. Zerolatency minimizes encoder buffering."),
+            VideoEncoder.Libx265=>Loc.T("PSNR and SSIM optimize for their respective test metrics. Grain preserves texture, animation targets animated content, fastdecode reduces decoding work, and zerolatency reduces buffering."),
+            VideoEncoder.H264Nvenc or VideoEncoder.HevcNvenc=>Loc.T("HQ prioritizes quality, LL reduces latency, ULL reduces it further, and lossless selects lossless tuning."),
+            _=>null
+        };
+        ToolTip.SetTip(tune,tuneHelp is null?null:Loc.T("Auto uses the encoder default without additional tuning.")+" "+tuneHelp);
         if(preset.Parent is Control presetRow)presetRow.IsVisible=RecordingValidation.Presets(draft.Encoder).Length>1;
         if(tune.Parent is Control tuneRow)tuneRow.IsVisible=RecordingValidation.Tunes(draft.Encoder).Length>1;
         custom.IsEnabled = custom.IsVisible = draft.UseCustomCommand;
@@ -302,7 +336,7 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
         if(draft.Encoder==VideoEncoder.Libvpx)videoBitrate.IsEnabled=!draft.UseCustomCommand;
         scalePercent.IsEnabled = draft.ScaleMode == ScaleMode.Percentage; divideBy.IsEnabled = draft.ScaleMode == ScaleMode.DivideBy;
         targetWidth.IsEnabled = targetHeight.IsEnabled = aspect.IsEnabled = draft.ScaleMode == ScaleMode.TargetSize;
-        directShow.IsEnabled = draft.AudioSource == AudioSource.DirectShow;
+        if(directShow.Parent is Control deviceField)deviceField.IsVisible=draft.AudioSource==AudioSource.DirectShow;
         try
         {
             if (numbers.Any(number => number.Value is null)) throw new ArgumentException(Loc.T("Fill all numeric recording fields."));
@@ -359,7 +393,7 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
     }
     private CheckBox Toggle(string name, Func<RecordingOptions, bool> get, Func<RecordingOptions, bool, RecordingOptions> set)
     {
-        var box = new CheckBox { Content = Loc.T("Enabled") }; SetName(box, name); setters.Add(o => box.IsChecked = get(o));
+        var box = new CheckBox(); SetName(box, name); setters.Add(o => box.IsChecked = get(o));
         box.PropertyChanged += (_, e) => { if (e.Property == ToggleButton.IsCheckedProperty) Change(set(draft, box.IsChecked == true)); }; return box;
     }
     private static void SetName(Control control, string name) => AutomationProperties.SetName(control, name);
@@ -407,14 +441,14 @@ public sealed class VideoSettingsPage : UserControl, IDisposable
         GifDither.None => Loc.T("None"),
         _ => value?.ToString() ?? ""
     };
-    private static StackPanel Panel(params Control[] controls) { var panel = Ui.Stack(controls); panel.Spacing = 4; return panel; }
+    private static StackPanel Panel(params Control[] controls) { var panel = Ui.Stack(controls); panel.Spacing = 3; return panel; }
     private static Grid Field(string title, Control value, string? help = null)
     {
         var label = Ui.Text(title,12);label.TextWrapping=TextWrapping.NoWrap;label.TextTrimming=TextTrimming.CharacterEllipsis;
         label.Classes.Add("video-field-label");ToolTip.SetTip(label,Loc.T(title));
         value.HorizontalAlignment=HorizontalAlignment.Stretch;
-        var grid=new Grid{RowDefinitions=new("Auto,Auto"),RowSpacing=3,Children={label,value}};
-        Grid.SetRow(value,1);if(help is not null)ToolTip.SetTip(grid,Loc.T(help));return grid;
+        var grid=new Grid{ColumnDefinitions=new("*,1.8*"),ColumnSpacing=6,Children={label,value}};
+        label.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(value,1);if(help is not null)ToolTip.SetTip(grid,Loc.T(help));return grid;
     }
     private static Grid Columns(Control left, Control right)
     {

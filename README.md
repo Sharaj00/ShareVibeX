@@ -12,17 +12,17 @@ ShareVibeX is a portable screen capture and recording tool for Windows 11. It wa
 - **In-place video preview.** Pause, seek, step through frames, and keep or remove an A–B range. Copy the edited file to the clipboard or save it to a folder.
 - **Portable preferences.** A tray menu, English and Russian interfaces, Windows system and AMOLED themes, configurable capture outlines, and optional capture history.
 
-Windows Graphics Capture and GDI are available for screenshots and structured recordings. Eligible single-monitor GDI recordings can follow a movable region without restarting the encoder.
+Windows Graphics Capture and GDI are available for screenshots and structured recordings. Eligible single-monitor GDI and SDR WGC recordings can follow a movable region without restarting the encoder. In true exclusive fullscreen, the capture shortcut copies the monitor image directly.
 
 ## Getting started
 
 1. Extract the entire ZIP into a writable folder and run `ShareVibeX.App.exe`. The app opens in the system tray.
-2. Press **Ctrl+PrintScreen** or choose **Capture region** from the tray menu. To change the shortcut, click the current combination in **Settings → General**.
-3. To record video, use a compatible FFmpeg build. **Settings → Capture → Video** shows the detected executable. Click the path to select a different one and use **Test** to inspect its capabilities.
+2. Press **PrintScreen** or choose **Capture region** from the tray menu. To change the shortcut, click the current combination in **Settings → General**.
+3. To record video, use a compatible FFmpeg build. **Settings → Capture → Media** shows the detected executable. Click the path to select a different one and use **Test** to inspect its capabilities.
 
 Screenshots require no FFmpeg. The portable Windows build includes the .NET runtime. FFmpeg is discovered separately and is not bundled. The [FFmpeg download page](https://ffmpeg.org/download.html) lists available builds.
 
-Settings live in `data/settings.json` next to the executable. The default output folder is `Screenshots` in your Windows Pictures folder. General settings control monthly subfolders and whether Copy and Save add results to History.
+Settings live in `settings.json` next to the executable. Older `data/settings.json` profiles are read if the new file is absent. Keep the `libs` directory beside the executable. The default output folder is `Screenshots` in your Windows Pictures folder. General settings control monthly subfolders and whether Copy and Save add results to History.
 
 ## Build from source
 

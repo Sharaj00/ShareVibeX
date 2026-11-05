@@ -14,7 +14,7 @@ public static class WindowsCompletionPlatform
             StopCompletionSound();
             try
             {
-                var path=CompletionSoundFile.TryResolve(customSoundPath,AppContext.BaseDirectory);
+                var path=CompletionSoundFile.TryResolve(customSoundPath,ShareVibeX.Core.IO.PortablePaths.BaseDirectory);
                 if(path is not null&&PlaySound(path,0,0x20000|0x1|0x2)){soundOwned=true;return;}
                 // Use our own async alias playback so Block can stop even the default sound.
                 soundOwned=PlaySound("SystemAsterisk",0,0x10000|0x1|0x2);

@@ -13,7 +13,9 @@ namespace ShareVibeX.Platform.Windows.Capture;
 
 public static class WgcInterop
 {
-    public static IWgcMonitorSession OpenSession(WgcCaptureTarget target)
+    public static IWgcMonitorSession OpenSession(WgcCaptureTarget target)=>OpenRegionSession(target);
+
+    internal static IWgcRegionSession OpenRegionSession(WgcCaptureTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
         try { return new NativeSession(target); }
@@ -27,7 +29,7 @@ public static class WgcInterop
 
     private static bool IsOutOfMemory(Exception ex) => ex is not OutOfMemoryException && ex.HResult == unchecked((int)0x8007000E);
 
-    private sealed class NativeSession : IWgcMonitorSession
+    private sealed class NativeSession : IWgcRegionSession
     {
         private readonly object gate = new();
         private readonly WgcCaptureTarget target;
@@ -37,6 +39,9 @@ public static class WgcInterop
         private GraphicsCaptureItem? item;
         private Direct3D11CaptureFramePool? pool;
         private GraphicsCaptureSession? session;
+        private ID3D11Texture2D? latestTexture,regionStaging;
+        private PixelRect lastRegion;
+        private byte[]? lastDestination;
         private bool disposed;
         private int targetClosed;
         public event Action? FrameArrived;
@@ -126,19 +131,7 @@ public static class WgcInterop
                 var stagingDesc = new Texture2DDescription(Format.B8G8R8A8_UNorm, desc.Width, desc.Height, 1, 1, BindFlags.None, ResourceUsage.Staging, CpuAccessFlags.Read);
                 using var staging = device!.CreateTexture2D(stagingDesc);
                 context!.CopyResource(staging, source);
-                // Nonblocking Map polling does not submit the queued copy.
-                context.Flush();
-                var watch = Stopwatch.StartNew();
-                MappedSubresource mapped;
-                while (true)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    ThrowIfTargetClosed();
-                    var result = context.Map(staging, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.DoNotWait, out mapped);
-                    if (result.Code != unchecked((int)0x887A000A)) { ThrowForHr(result.Code); break; }
-                    if (watch.Elapsed >= TimeSpan.FromSeconds(5)) throw new CaptureSourceUnavailableException(Loc.T("Timed out reading the Windows Graphics Capture frame."));
-                    Thread.Sleep(1);
-                }
+                var mapped=MapReadback(staging,cancellationToken);
                 try
                 {
                     int pitch = checked((int)mapped.RowPitch);
@@ -151,6 +144,74 @@ public static class WgcInterop
                 }
                 finally { context.Unmap(staging, 0); }
             }
+        }
+
+        public unsafe bool TryCopyRegion(PixelRect region,byte[] destination,CancellationToken token)
+        {
+            lock(gate)
+            {
+                ObjectDisposedException.ThrowIf(disposed,this);
+                token.ThrowIfCancellationRequested();
+                ThrowIfTargetClosed();
+                var bounds=target.Monitor.Bounds;
+                if(region.IsEmpty||bounds.Intersect(region)!=region||destination.Length!=checked(region.Width*region.Height*4))
+                    throw new ArgumentOutOfRangeException(nameof(region));
+
+                using var frame=pool!.TryGetNextFrame();
+                if(frame is not null)
+                {
+                    ValidateSize(frame.ContentSize);
+                    using var source=GetTexture(frame.Surface);
+                    var desc=source.Description;
+                    if(desc.Width<bounds.Width||desc.Height<bounds.Height||desc.Format!=Format.B8G8R8A8_UNorm||
+                        desc.SampleDescription.Count!=1||desc.MipLevels!=1||desc.ArraySize!=1)
+                        throw new InvalidDataException(Loc.T("The capture texture does not match the requested BGRA monitor frame."));
+                    latestTexture??=device!.CreateTexture2D(new Texture2DDescription(Format.B8G8R8A8_UNorm,(uint)bounds.Width,(uint)bounds.Height,1,1));
+                    context!.CopySubresourceRegion(latestTexture,0,0,0,0,source,0,new Vortice.Mathematics.Box(0,0,0,bounds.Width,bounds.Height,1));
+                }
+                if(latestTexture is null)return false;
+                if(frame is null&&lastRegion==region&&ReferenceEquals(destination,lastDestination))return true;
+                if(regionStaging is not null&&(region.Width!=lastRegion.Width||region.Height!=lastRegion.Height))
+                    throw new ArgumentException("The recording crop dimensions cannot change.",nameof(region));
+                regionStaging??=device!.CreateTexture2D(new Texture2DDescription(Format.B8G8R8A8_UNorm,(uint)region.Width,(uint)region.Height,1,1,BindFlags.None,ResourceUsage.Staging,CpuAccessFlags.Read));
+                var crop=new Vortice.Mathematics.Box(region.X-bounds.X,region.Y-bounds.Y,0,region.Right-bounds.X,region.Bottom-bounds.Y,1);
+                context!.CopySubresourceRegion(regionStaging,0,0,0,0,latestTexture,0,crop);
+                var mapped=MapReadback(regionStaging,token);
+                try
+                {
+                    var stride=checked(region.Width*4);
+                    var pitch=checked((int)mapped.RowPitch);
+                    if(mapped.DataPointer==0||pitch<stride)
+                        throw new InvalidDataException(Loc.T("The mapped capture texture has invalid row storage."));
+                    for(var y=0;y<region.Height;y++)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        new ReadOnlySpan<byte>((void*)(mapped.DataPointer+y*pitch),stride).CopyTo(destination.AsSpan(y*stride,stride));
+                    }
+                }
+                finally{context.Unmap(regionStaging,0);}
+                lastRegion=region;
+                lastDestination=destination;
+                return true;
+            }
+        }
+
+        private MappedSubresource MapReadback(ID3D11Texture2D staging,CancellationToken token)
+        {
+            // Nonblocking Map polling does not submit the queued copy.
+            context!.Flush();
+            var watch = Stopwatch.StartNew();
+            MappedSubresource mapped;
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+                ThrowIfTargetClosed();
+                var result = context.Map(staging, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.DoNotWait, out mapped);
+                if (result.Code != unchecked((int)0x887A000A)) { ThrowForHr(result.Code); break; }
+                if (watch.Elapsed >= TimeSpan.FromSeconds(5)) throw new CaptureSourceUnavailableException(Loc.T("Timed out reading the Windows Graphics Capture frame."));
+                Thread.Sleep(1);
+            }
+            return mapped;
         }
 
         private void ValidateSize(SizeInt32 size)
@@ -176,6 +237,8 @@ public static class WgcInterop
                 Release(() => session?.Dispose());
                 Release(() => pool?.Dispose());
                 Release(() => winrtDevice?.Dispose());
+                Release(() => regionStaging?.Dispose());
+                Release(() => latestTexture?.Dispose());
                 Release(() => context?.Dispose());
                 Release(() => device?.Dispose());
                 session = null; pool = null; winrtDevice = null; context = null; device = null; item = null;

@@ -249,7 +249,7 @@ public sealed class RecordingPreviewWindow:Window
         if(panelMonitor is not {} monitor)return;
         stripBody.Measure(new Size(Math.Max(1,ControlStrip.Width-16),double.PositiveInfinity));
         ControlStrip.Height=Math.Min(monitor.Bounds.Height/monitor.Scale,Math.Max(56,Math.Ceiling(stripBody.DesiredSize.Height+16)));
-        var position=OverlayToolbarLayout.Place(new Rect((region.X-monitor.Bounds.X)/monitor.Scale+(region.Width/monitor.Scale-ControlStrip.Width)/2,(region.Y-monitor.Bounds.Y)/monitor.Scale,region.Width/monitor.Scale,region.Height/monitor.Scale),new Size(ControlStrip.Width,Math.Min(monitor.Bounds.Height/monitor.Scale,Math.Max(56,Math.Ceiling(stripBody.DesiredSize.Height+16)+(time.IsVisible?0:24)))),new Size(monitor.Bounds.Width/monitor.Scale,monitor.Bounds.Height/monitor.Scale));
+        var position=OverlayToolbarLayout.Place(new Rect((region.X-monitor.Bounds.X)/monitor.Scale,(region.Y-monitor.Bounds.Y)/monitor.Scale,region.Width/monitor.Scale,region.Height/monitor.Scale),new Size(ControlStrip.Width,Math.Min(monitor.Bounds.Height/monitor.Scale,Math.Max(56,Math.Ceiling(stripBody.DesiredSize.Height+16)+(time.IsVisible?0:24)))),new Size(monitor.Bounds.Width/monitor.Scale,monitor.Bounds.Height/monitor.Scale));
         ControlStrip.Position=new(monitor.Bounds.X+(int)Math.Round(position.X*monitor.Scale),monitor.Bounds.Y+(int)Math.Round(position.Y*monitor.Scale));
     }
     private void OnClosing(object? sender,WindowClosingEventArgs args){if(!dismiss){args.Cancel=true;Observe(RequestCloseAsync());}}

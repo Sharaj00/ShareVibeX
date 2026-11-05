@@ -5,7 +5,10 @@ public static class WindowsFrameRegion
     public static bool Apply(nint window,int width,int height,int thickness=2)
     {
         if(!OperatingSystem.IsWindows()||window==0||width<3||height<3)return false;
-        var outer=CreateRectRgn(0,0,width,height);var inner=CreateRectRgn(thickness,thickness,width-thickness,height-thickness);
+        var outer=CreateRectRgn(0,0,width,height);
+        var inner=width>2*thickness&&height>2*thickness
+            ?CreateRectRgn(thickness,thickness,width-thickness,height-thickness)
+            :CreateRectRgn(0,0,0,0);
         try
         {
             if(outer==0||inner==0||CombineRgn(outer,outer,inner,4)==0)return false;

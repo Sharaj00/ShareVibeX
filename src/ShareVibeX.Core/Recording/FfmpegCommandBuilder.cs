@@ -81,7 +81,7 @@ public static class FfmpegCommandBuilder
         if(value.Encoder is VideoEncoder.Libvpx or VideoEncoder.LibvpxVp9 or VideoEncoder.LibaomAv1 or VideoEncoder.Libsvtav1 or VideoEncoder.Libxvid)
         {
             if(value.Encoder!=VideoEncoder.Libxvid)
-                args.AddRange([value.Encoder==VideoEncoder.Libsvtav1?"-preset":"-cpu-used",value.Preset=="auto"?"6":value.Preset]);
+                args.AddRange([value.Encoder==VideoEncoder.Libsvtav1?"-preset":"-cpu-used",value.Preset=="auto"?RecordingValidation.AutoPreset(value.Encoder):value.Preset]);
             if(value.RateControl==VideoRateControl.Bitrate)args.AddRange(["-b:v",$"{value.VideoBitrateKbps}k"]);
             else if(value.Encoder==VideoEncoder.Libxvid)args.AddRange(["-q:v",N(value.Quality)]);
             else
@@ -91,8 +91,7 @@ public static class FfmpegCommandBuilder
             }
             return;
         }
-        var preset = value.Preset == "auto" ? value.Encoder switch
-        { VideoEncoder.H264Nvenc or VideoEncoder.HevcNvenc => "p4", VideoEncoder.H264Amf or VideoEncoder.HevcAmf => "balanced", _ => "veryfast" } : value.Preset;
+        var preset = value.Preset == "auto" ? RecordingValidation.AutoPreset(value.Encoder) : value.Preset;
         args.AddRange([value.Encoder is VideoEncoder.H264Amf or VideoEncoder.HevcAmf ? "-quality" : "-preset", preset]);
         if (value.Tune.Length > 0) args.AddRange(["-tune", value.Tune]);
         if (value.RateControl == VideoRateControl.Bitrate) args.AddRange(["-b:v", $"{value.VideoBitrateKbps}k"]);

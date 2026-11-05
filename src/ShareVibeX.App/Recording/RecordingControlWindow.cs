@@ -2,8 +2,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Automation;
 using Avalonia.Layout;
-using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Controls.Primitives;
 using ShareVibeX.App.Views;
@@ -20,11 +18,9 @@ public sealed class RecordingControlWindow : Window
     private readonly TextBlock heading=Ui.Text("Starting recording…",13);
     private readonly TextBlock metrics=Ui.Text("—",12);
     private readonly TextBlock detail=Ui.Text("",11,true);
+    private readonly object? stopIcon;
     private readonly Button stopButton,cancelButton,closeButton,pauseButton;
-    private readonly Border moveGrip;
-    private bool canMove;
-    private Func<PixelRect>? getRegion;
-    private Action<PixelRect,int,int>? moveRegion;
+    private readonly ShareVibeX.App.Capture.RegionMoveGrip moveGrip=new();
     private readonly ToggleButton microphoneButton;
     private Func<Task>? pauseResume;
     private Func<bool,Task>? setMicrophone;
@@ -39,52 +35,26 @@ public sealed class RecordingControlWindow : Window
         detail.TextTrimming=TextTrimming.CharacterEllipsis;detail.MaxHeight=14;detail.TextWrapping=TextWrapping.NoWrap;
         ToolTip.SetShouldUseOverlayLayer(detail,true);
         stopButton=CreateIcon("Stop","M4,4 L20,4 L20,20 L4,20 Z",()=>_=ExecuteAsync(false,stop));
+        stopIcon=stopButton.Content;
         pauseButton=CreateIcon("Pause","M5,4 L10,4 L10,20 L5,20 Z M14,4 L19,4 L19,20 L14,20 Z",()=>_=PauseResumeAsync());
         microphoneButton=new(){Width=CapturePanelStyle.ButtonSize,Height=CapturePanelStyle.ButtonSize,Padding=new Thickness(8),Content=new PathIcon{Data=Geometry.Parse("M9,3 L15,3 L15,14 Q12,18 9,14 Z M5,11 L7,11 L7,15 Q12,22 17,15 L17,11 L19,11 L19,16 Q17,21 13,21 L13,24 L17,24 L17,26 L7,26 L7,24 L11,24 L11,21 Q7,21 5,16 Z"),Width=22,Height=22}};
         CapturePanelStyle.Apply(microphoneButton);AutomationProperties.SetName(microphoneButton,"Microphone");ToolTip.SetTip(microphoneButton,Loc.T("Microphone"));ToolTip.SetShouldUseOverlayLayer(microphoneButton,true);
         microphoneButton.IsCheckedChanged+=(_,_)=>{if(!syncing)_=SwitchMicrophoneAsync(microphoneButton.IsChecked==true);};
         cancelButton=CreateIcon("Cancel recording","M4,6 L6,4 L12,10 L18,4 L20,6 L14,12 L20,18 L18,20 L12,14 L6,20 L4,18 L10,12 Z",()=>_=ExecuteAsync(true,cancel));
         closeButton=CreateIcon("Close result","M4,6 L6,4 L12,10 L18,4 L20,6 L14,12 L20,18 L18,20 L12,14 L6,20 L4,18 L10,12 Z",closeResult);
-        moveGrip=new Border{Height=10,Background=Brush.Parse("#805F6670"),CornerRadius=new CornerRadius(4)};
-        AutomationProperties.SetName(moveGrip,"Move recording region");
-        ToolTip.SetTip(moveGrip,Loc.T("Move recording region"));
-        ToolTip.SetShouldUseOverlayLayer(moveGrip,true);
-        var hand=new Cursor(StandardCursorType.Hand);
-        moveGrip.Cursor=hand;
-        Closed+=(_,_)=>hand.Dispose();
-        (Avalonia.PixelPoint Point,PixelRect Region)? drag=null;
-        moveGrip.AddHandler(PointerPressedEvent,(_,e)=>
-        {
-            if(!canMove||e.GetCurrentPoint(this).Properties.PointerUpdateKind!=PointerUpdateKind.LeftButtonPressed)return;
-            drag=(this.PointToScreen(e.GetPosition(this)),getRegion!());
-            e.Pointer.Capture(moveGrip);
-            e.Handled=true;
-        },RoutingStrategies.Tunnel);
-        moveGrip.PointerMoved+=(_,e)=>
-        {
-            if(!canMove||drag is not {} start)return;
-            var point=this.PointToScreen(e.GetPosition(this));
-            moveRegion!(start.Region,point.X-start.Point.X,point.Y-start.Point.Y);
-        };
-        moveGrip.AddHandler(PointerReleasedEvent,(_,e)=>
-        {
-            if(drag is null||e.InitialPressMouseButton!=MouseButton.Left)return;
-            drag=null;e.Pointer.Capture(null);e.Handled=true;
-        },RoutingStrategies.Tunnel);
-        moveGrip.PointerCaptureLost+=(_,_)=>drag=null;
-        var row=new StackPanel{Orientation=Orientation.Horizontal,Spacing=2,Children={stopButton,pauseButton,microphoneButton,cancelButton,closeButton}};
+        var row=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center,Spacing=2,Children={stopButton,pauseButton,microphoneButton,cancelButton,closeButton}};
         var content=Ui.Stack(moveGrip,row,metrics,detail);content.Spacing=6;metrics.TextWrapping=TextWrapping.NoWrap;metrics.TextTrimming=TextTrimming.CharacterEllipsis;
         var panel=new Border{Child=content};CapturePanelStyle.Apply(panel);Content=panel;
-        Closed+=(_,_)=>disposed=true;
+        Closed+=(_,_)=>{disposed=true;moveGrip.Dispose();};
         Closing+=(_,e)=>{if(!disposed && IsRecording()){e.Cancel=true;_=ExecuteAsync(true,cancel);}};
-        moveGrip.IsVisible=false;UpdateButtons();
+        UpdateButtons();
     }
     public bool TryPresent(PixelRect region,MonitorInfo monitor,Func<nint,bool>? exclude=null,CapturePanelPlacement? anchor=null,bool roomForMove=false)
     {
         var excluded=(exclude??WindowsCaptureExclusion.TryExclude)(TryGetPlatformHandle()?.Handle??0);
         IsCaptureExcluded=excluded;
         var preferredWidth=anchor?.Width??224;
-        var extraHeight=excluded&&roomForMove?16:0;
+        var extraHeight=anchor is null&&roomForMove?16:0;
         Width=Math.Min(preferredWidth,monitor.Bounds.Width/monitor.Scale);Height=Math.Min((anchor?.Height??96)+extraHeight,monitor.Bounds.Height/monitor.Scale);
         var position=RecordingControlPlacement.TryPlace(region,monitor,new(Width,Height),excluded);
         if(anchor is not null&&double.IsFinite(Width)&&Width>0&&double.IsFinite(Height)&&Height>0)
@@ -105,17 +75,11 @@ public sealed class RecordingControlWindow : Window
         var position=new Avalonia.PixelPoint(x,y);
         if(Position!=position)Position=position;
     }
-    public void ConfigureRegionMove(Func<PixelRect> region,Action<PixelRect,int,int> move)
-    {
-        getRegion=region;moveRegion=move;
-    }
-    public void SetRegionMoveAvailable(bool available)
-    {
-        canMove=available;
-        moveGrip.IsVisible=available;
-    }
+    public void ConfigureRegionMove(Func<PixelRect> region,Action<PixelRect,int,int> move)=>moveGrip.Configure(region,move);
+    public void SetRegionMoveAvailable(bool available)=>moveGrip.SetAvailable(available);
     public void ConfigureRecordingActions(Func<Task> pauseResume,Func<bool,Task> setMicrophone)
     {this.pauseResume=pauseResume;this.setMicrophone=setMicrophone;UpdateButtons();}
+    public void SetCountdown(int seconds)=>stopButton.Content=seconds>0?seconds.ToString(CultureInfo.CurrentCulture):stopIcon;
     public void Update(RecordingSessionState value,RecordingProgress progress,int width,int height,string? path=null,
         bool canPause=false,bool canMicrophone=false,bool microphoneEnabled=false)
     {
@@ -137,6 +101,7 @@ public sealed class RecordingControlWindow : Window
         or RecordingSessionState.Pausing or RecordingSessionState.Paused or RecordingSessionState.Resuming;
     private void UpdateButtons()
     {
+        moveGrip.IsVisible=IsRecording()||state==RecordingSessionState.Result;
         stopButton.IsVisible=IsRecording();cancelButton.IsVisible=IsRecording()||state==RecordingSessionState.Failed;closeButton.IsVisible=!IsRecording();
         stopButton.IsEnabled=!stopBusy && state!=RecordingSessionState.Finalizing;cancelButton.IsEnabled=!cancelBusy;
         pauseButton.IsVisible=IsRecording() && pauseResume is not null;microphoneButton.IsVisible=IsRecording() && setMicrophone is not null;

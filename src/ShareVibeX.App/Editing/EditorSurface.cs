@@ -100,11 +100,14 @@ public sealed class EditorSurface(CaptureEditorState state,DesktopLayout layout,
     private Rect Local(R rect,double scale)=>new((rect.X-monitor.Bounds.X)/scale,(rect.Y-monitor.Bounds.Y)/scale,rect.Width/scale,rect.Height/scale);
     private static bool Contains(R rect,P point,int padding=0)=>point.X>=rect.X-padding && point.Y>=rect.Y-padding && point.X<=rect.Right+padding && point.Y<=rect.Bottom+padding;
 
+    public Func<P,bool>? PickColor {get;init;}
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         if(Busy)return;
         if(e.GetCurrentPoint(this).Properties.IsRightButtonPressed){Cancel?.Invoke();return;}
         if(!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)return;
+        if(PickColor?.Invoke(Physical(e))==true){e.Handled=true;return;}
         BeforePointerDown?.Invoke();
         Focus();var p=Physical(e);if(IsLiveSelection||state.Tool==EditorTool.Region)p=SelectionRules.ClampPoint(p,RegionBounds);
         if(IsLiveSelection&&state.Region.IsEmpty&&Options.DetectWindows&&DetectRegion is not null)

@@ -91,10 +91,10 @@ public sealed class HistoryPageTests(UiTestFixture ui)
             window.Show();window.SelectHistory();
             var sections=window.GetLogicalDescendants().OfType<TabControl>().Single(c=>AutomationProperties.GetName(c)=="Settings sections");
             Assert.Equal(3,sections.ItemCount);Assert.Equal(2,sections.SelectedIndex);
-            Assert.False(window.GetLogicalDescendants().OfType<Button>().Single(b=>AutomationProperties.GetName(b)=="Save settings").IsVisible);
+            Assert.False(((TabItem)sections.Items[0]!).IsEnabled);
             sections.SelectedIndex=0;Assert.Equal(2,sections.SelectedIndex);
             editable=true;window.RefreshEditAccess();sections.SelectedIndex=0;Assert.Equal(0,sections.SelectedIndex);
-            Assert.True(window.GetLogicalDescendants().OfType<Button>().Single(b=>AutomationProperties.GetName(b)=="Save settings").IsVisible);
+            Assert.True(((TabItem)sections.Items[0]!).IsEnabled);
         }
         finally{window.Close();}
     });

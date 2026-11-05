@@ -7,9 +7,11 @@ using ShareVibeX.Core.Recording;
 
 namespace ShareVibeX.Core.Settings;
 
-public sealed class PortableSettingsStore(string dataDirectory) : ISettingsStore
+public sealed class PortableSettingsStore(string dataDirectory,string? settingsPath=null) : ISettingsStore
 {
     public string DataDirectory { get; } = Path.GetFullPath(dataDirectory);
+    public string SettingsPath { get; } = Path.GetFullPath(settingsPath??Path.Combine(dataDirectory,"settings.json"));
+    public string ExistingSettingsPath => File.Exists(SettingsPath)?SettingsPath:Path.Combine(DataDirectory,"settings.json");
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
@@ -18,8 +20,8 @@ public sealed class PortableSettingsStore(string dataDirectory) : ISettingsStore
 
     public async Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
-        var path = Path.Combine(DataDirectory, "settings.json");
-        if (!File.Exists(path)) return new AppSettings();
+        var path = ExistingSettingsPath;
+        if (!File.Exists(path)) return AppSettings.FactoryDefaults;
         var node=JsonNode.Parse(await File.ReadAllTextAsync(path,cancellationToken)) as JsonObject
             ?? throw new InvalidDataException(Loc.T("Settings must be a JSON object."));
         var schema=node["SchemaVersion"]?.GetValue<int>()??1;
@@ -41,7 +43,7 @@ public sealed class PortableSettingsStore(string dataDirectory) : ISettingsStore
     public Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
         Validate(settings);
-        return AtomicFile.WriteAsync(Path.Combine(DataDirectory, "settings.json"),
+        return AtomicFile.WriteAsync(SettingsPath,
             (stream, token) => JsonSerializer.SerializeAsync(stream, settings, Options, token), cancellationToken);
     }
 

@@ -86,7 +86,7 @@ public sealed class AnimationSettingsTests(UiTestFixture ui)
         {
             var bar=new CaptureModeToolbar(()=>Task.CompletedTask,()=>{},()=>{},()=>{},sources:new(true,true),animation:true);
             bar.SetMicrophoneAvailable(true);bar.SetSources(new(true,true));Assert.False(bar.Sources.WithAudio);
-            foreach(var button in bar.GetLogicalDescendants().OfType<ToggleButton>())
+            foreach(var button in bar.GetLogicalDescendants().OfType<ToggleButton>().Where(b=>AutomationProperties.GetName(b) is "Sound" or "Microphone"))
             {Assert.False(button.IsEnabled);Assert.Equal(Loc.T("Animations are silent."),ToolTip.GetTip(button));}
         }
         finally{Loc.Language=old;}

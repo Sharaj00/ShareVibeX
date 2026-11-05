@@ -59,7 +59,7 @@ public sealed class RecordingControlPresenter : IDisposable
             controls.SetMicrophoneAvailable(microphoneAvailable,request.Options.IsAnimation);
             if(request.Sources.Microphone&&!microphoneAvailable)throw new InvalidOperationException(Loc.T(MicrophoneAvailability.UnavailableMessage));
             var movable=!request.Options.UseCustomCommand&&request.Region!=monitor.Bounds&&monitor.Bounds.Intersect(request.Region)==request.Region;
-            if(!controls.TryPresent(request.Region,monitor,exclude,request.ToolbarPlacement,roomForMove:movable))
+            if(!controls.TryPresent(request.Region,monitor,exclude,request.ToolbarPlacement,roomForMove:true))
                 throw new InvalidOperationException(Loc.T("Recording controls cannot be excluded from capture or placed outside the region. Choose a smaller region or use a Windows configuration supporting capture exclusion."));
             Func<PixelRect,PixelRect?>? move=null;
             if(controls.IsCaptureExcluded&&movable)
@@ -121,6 +121,7 @@ public sealed class RecordingControlPresenter : IDisposable
         var detail=session.Result?.OutputPath??session.Result?.PartialPath??(session.State==RecordingSessionState.Failed?session.Result?.Error:null);
         if(session.LastError is {} error)detail=error+(detail is null?"":" · "+detail);
         if(stopReason is not null)detail=stopReason+(detail is null?"":" · "+detail);
+        window?.SetCountdown(session.CountdownRemaining);
         window?.Update(session.State,session.Progress,session.Width,session.Height,detail,session.CanPause,session.CanToggleMicrophone,session.Sources.Microphone);
         window?.SetMicrophoneAvailable(microphoneAvailable,service.IsActive&&service.Session.Options.IsAnimation);
         if(session.HasPendingResult&&preview is not null&&!previewOpened&&!preparingExit)

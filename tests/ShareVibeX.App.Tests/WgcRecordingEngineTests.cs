@@ -16,6 +16,38 @@ public sealed class WgcRecordingEngineTests:IDisposable
         Assert.Equal(CaptureBackend.WindowsGraphicsCapture,run.EffectiveCaptureBackend);Assert.Contains("lavfi",factory.Arguments!);Assert.DoesNotContain("gdigrab",factory.Arguments!);
         Assert.Null(run.CaptureFallbackReason);await Finish(factory,run);
     }
+    [Theory]
+    [InlineData(CaptureBackend.WindowsGraphicsCapture)]
+    [InlineData(CaptureBackend.Automatic)]
+    public async Task MovableWgcKeepsTheSameProcessAndReportsWgc(CaptureBackend backend)
+    {
+        var factory=new Factory{Process=new(){CompleteOnStop=true}};var video=new MovableVideo();
+        var engine=new RecordingEngine(new Probe{Gdi=false,Wgc=false},factory,new Audio(),_=>"fixture",
+            resolveWgc:(_,_)=>throw new InvalidOperationException("Fixed WGC should not be selected."),
+            openMovableWgc:(_,_,_,_)=>video);
+        var session=new RecordingSessionController(engine,directory);
+        await session.StartAsync(new(),Region,new(false,false),captureBackend:backend,movableMonitor:new("screen",new(0,0,400,300),1));
+        Assert.Equal(CaptureBackend.WindowsGraphicsCapture,session.EffectiveCaptureBackend);
+        Assert.True(session.CanMoveRegion);Assert.Contains("rawvideo",factory.Arguments!);
+        var moved=Region with{X=31,Y=47};
+        Assert.True(session.TryMoveRegion(moved));
+        Assert.Equal(moved,video.Region);Assert.Equal(1,factory.Starts);
+        Assert.Equal(Region.Width,session.Width);Assert.Equal(Region.Height,session.Height);
+        await session.CancelAsync();
+        Assert.True(video.Disposed);
+    }
+
+    [Fact] public async Task MovableWgcFailureKeepsFixedWgcAvailable()
+    {
+        var factory=new Factory();
+        var engine=new RecordingEngine(new Probe(),factory,new Audio(),_=>"fixture",resolveWgc:Resolve,
+            openMovableWgc:(_,_,_,_)=>throw new CaptureSourceUnavailableException("Movable WGC unavailable"));
+        var run=await engine.StartAsync(Request(CaptureBackend.WindowsGraphicsCapture) with{MovableMonitor=new("screen",Region,1)});
+        Assert.Equal(CaptureBackend.WindowsGraphicsCapture,run.EffectiveCaptureBackend);
+        Assert.False(run.CanMoveRegion);Assert.Contains("lavfi",factory.Arguments!);
+        await Finish(factory,run);
+    }
+
     [Fact] public async Task AutomaticMissingWgcFallsBackBeforeAudioOrProcessStarts()
     {
         var factory=new Factory();var resolved=false;
@@ -88,6 +120,15 @@ public sealed class WgcRecordingEngineTests:IDisposable
     {
         public RecordingEngineTests.FakeProcess Process=new();public IReadOnlyList<string>? Arguments;public int Starts;public bool FailStart;
         public IRecordingProcess Start(string exe,IReadOnlyList<string> args){Starts++;Arguments=args;if(FailStart)throw new IOException("encoder startup");return Process;}
+    }
+    private sealed class MovableVideo:IMovableRecordingVideo
+    {
+        public PixelRect Region {get;private set;}
+        public bool Disposed {get;private set;}
+        public IReadOnlyList<string> Arguments=>["-f","rawvideo","-i","synthetic-pipe"];
+        public Task Completion {get;}=Task.Delay(Timeout.Infinite);
+        public void Move(PixelRect region)=>Region=region;
+        public ValueTask DisposeAsync(){Disposed=true;return ValueTask.CompletedTask;}
     }
     private sealed class Audio:IRecordingAudioFactory
     {

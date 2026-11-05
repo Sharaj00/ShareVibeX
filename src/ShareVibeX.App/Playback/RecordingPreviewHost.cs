@@ -34,7 +34,7 @@ public sealed class RecordingPreviewHost(IPreviewDecoderFactory decoders,IPrevie
         if(options is not null)created.SetTimingsVisible(options.ShowVideoTimings);
         if(workspace is not null&&options is not null)
         {
-            exports=new VideoExportSession(media,options,workspace,Path.Combine(AppContext.BaseDirectory,"data","clipboard"),new VideoRenderer(new FfmpegRecordingProcessFactory()));
+            exports=new VideoExportSession(media,options,workspace,Path.Combine(ShareVibeX.Core.IO.PortablePaths.BaseDirectory,"data","clipboard"),new VideoRenderer(new FfmpegRecordingProcessFactory()));
             created.ConfigureExport(exports,workspace,(path,ct)=>WindowsFileClipboard.PublishAsync(created.ControlStrip.TryGetPlatformHandle()?.Handle??0,path,ct));
         }
         created.Closed+=(_,_)=>{if(ReferenceEquals(window,created)){window=null;Closed?.Invoke();}};

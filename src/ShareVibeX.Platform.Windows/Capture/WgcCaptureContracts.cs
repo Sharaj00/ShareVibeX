@@ -12,3 +12,8 @@ public interface IWgcMonitorSession:IDisposable
     void Start(bool captureCursor);
     WgcMonitorFrame? TryReadFrame(CancellationToken cancellationToken);
 }
+
+internal interface IWgcRegionSession:IWgcMonitorSession
+{
+    bool TryCopyRegion(PixelRect region,byte[] destination,CancellationToken token);
+}

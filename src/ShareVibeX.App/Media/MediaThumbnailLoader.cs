@@ -22,7 +22,7 @@ public static class MediaThumbnailLoader
                     if(token.IsCancellationRequested){bitmap.Dispose();token.ThrowIfCancellationRequested();}return bitmap;
                 },token).ConfigureAwait(false);
             using var timeout=CancellationTokenSource.CreateLinkedTokenSource(token);timeout.CancelAfter(TimeSpan.FromSeconds(8));
-            var executable=FfmpegLocator.Resolve(ffmpegPath,AppContext.BaseDirectory);
+            var executable=FfmpegLocator.Resolve(ffmpegPath,ShareVibeX.Core.IO.PortablePaths.BaseDirectory);
             var info=new ProcessStartInfo(executable){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
             foreach(var argument in new[]{"-v","error","-nostdin","-i",path,"-an","-frames:v","1","-vf",$"scale={width}:{width}:force_original_aspect_ratio=decrease","-f","image2pipe","-vcodec","png","pipe:1"})info.ArgumentList.Add(argument);
             using var process=new Process{StartInfo=info};process.Start();

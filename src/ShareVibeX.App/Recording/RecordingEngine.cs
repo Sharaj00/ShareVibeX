@@ -6,12 +6,13 @@ namespace ShareVibeX.App.Recording;
 public sealed class RecordingEngine(ICommandRunner probeRunner, IRecordingProcessFactory processes, IRecordingAudioFactory audio,
     Func<string?, string>? resolve = null, TimeSpan? startTimeout = null, TimeSpan? stopTimeout = null,
     Func<PixelRect,RecordingOptions,WgcVideoSource>? resolveWgc=null,
-    Func<PixelRect,MonitorInfo,RecordingOptions,CancellationToken,IMovableRecordingVideo>? openMovableVideo=null):IRecordingAssembler
+    Func<PixelRect,MonitorInfo,RecordingOptions,CancellationToken,IMovableRecordingVideo>? openMovableVideo=null,
+    Func<PixelRect,MonitorInfo,RecordingOptions,CancellationToken,IMovableRecordingVideo>? openMovableWgc=null):IRecordingAssembler
 {
     public bool SupportsLiveAudio=>audio is ILiveRecordingAudioFactory;
     public Task<RecordingResult> AssembleAsync(RecordingOptions options,RecordingWorkspace workspace,IReadOnlyList<RecordingSegment> segments,bool keepAudio,CancellationToken token)=>new RecordingAssembler(processes,resolve).AssembleAsync(options,workspace,segments,keepAudio,token);
     private int occupied;
-    public async Task<RecordingRun> StartAsync(RecordingRequest request, CancellationToken token = default)
+    public async Task<RecordingRun> StartAsync(RecordingRequest request, CancellationToken token = default,Task? startGate=null)
     {
         if(Interlocked.Exchange(ref occupied,1)!=0)throw new InvalidOperationException(Loc.T("A recording is already active."));
         var lifetime=new CancellationTokenSource();
@@ -28,7 +29,7 @@ public sealed class RecordingEngine(ICommandRunner probeRunner, IRecordingProces
                 throw new ArgumentException(Loc.T("The recording filename must match the selected container."));
             if(request.WithAudio && options.AudioSource==AudioSource.DirectShow && string.IsNullOrWhiteSpace(options.DirectShowDevice))
                 throw new ArgumentException(Loc.T("Select the exact DirectShow audio device name in Video settings."));
-            var executable=(resolve??(value=>FfmpegLocator.Resolve(value,AppContext.BaseDirectory)))(options.FfmpegPath);
+            var executable=(resolve??(value=>FfmpegLocator.Resolve(value,ShareVibeX.Core.IO.PortablePaths.BaseDirectory)))(options.FfmpegPath);
             IReadOnlyList<string> placeholder=["-f","f32le","-ar","48000","-ac","2","-i",@"\\.\pipe\pending"];
             if(options.AudioSource==AudioSource.DirectShow)placeholder=["-thread_queue_size","1024","-f","dshow","-i","audio="+options.DirectShowDevice];
             var directory=Path.GetDirectoryName(target)!;
@@ -55,7 +56,22 @@ public sealed class RecordingEngine(ICommandRunner probeRunner, IRecordingProces
                 await new FfmpegAnimationProbe(probeRunner).ValidateAsync(executable,finalOptions,token);
             }
             WgcVideoSource? wgcSource=null;string? sourceFallback=null;
-            if(!options.UseCustomCommand&&request.CaptureBackend!=CaptureBackend.Gdi)
+            var effectiveBackend=CaptureBackend.Gdi;
+            if(!options.UseCustomCommand&&request.CaptureBackend!=CaptureBackend.Gdi&&request.MovableMonitor is {} wgcMonitor&&openMovableWgc is not null)
+            {
+                token.ThrowIfCancellationRequested();
+                try
+                {
+                    video=openMovableWgc(request.Region,wgcMonitor,options,lifetime.Token);
+                    effectiveBackend=CaptureBackend.WindowsGraphicsCapture;
+                }
+                catch(CaptureSourceUnavailableException error)
+                {
+                    token.ThrowIfCancellationRequested();
+                    DiagnosticLog.Write("Movable WGC unavailable; trying fixed WGC: "+error.Message);
+                }
+            }
+            if(video is null&&!options.UseCustomCommand&&request.CaptureBackend!=CaptureBackend.Gdi)
             {
                 try
                 {
@@ -70,13 +86,14 @@ public sealed class RecordingEngine(ICommandRunner probeRunner, IRecordingProces
                 catch(CaptureSourceUnavailableException error)when(request.CaptureBackend==CaptureBackend.Automatic)
                 {token.ThrowIfCancellationRequested();wgcSource=null;sourceFallback=error.Message;}
             }
-            if(wgcSource is not null)preview=FfmpegCommandBuilder.Build(options,request.Region,request.WithAudio,temporary,placeholder,wgcSource);
-            else if(!options.UseCustomCommand&&request.MovableMonitor is {} monitor&&openMovableVideo is not null)
+            if(wgcSource is not null)effectiveBackend=CaptureBackend.WindowsGraphicsCapture;
+            else if(video is null&&!options.UseCustomCommand&&request.MovableMonitor is {} monitor&&openMovableVideo is not null)
             {
                 token.ThrowIfCancellationRequested();
                 video=openMovableVideo(request.Region,monitor,options,lifetime.Token);
-                preview=FfmpegCommandBuilder.Build(options,request.Region,request.WithAudio,temporary,placeholder,videoInput:video.Arguments);
             }
+            if(wgcSource is not null||video is not null)
+                preview=FfmpegCommandBuilder.Build(options,request.Region,request.WithAudio,temporary,placeholder,wgcSource,video?.Arguments);
             var missing=Missing(capabilities,preview.Arguments);
             if(missing.Count>0)throw new InvalidOperationException(Loc.T("FFmpeg is missing: ")+string.Join(", ",missing)+Loc.T(". Select a supported encoder/input in Video settings."));
             token.ThrowIfCancellationRequested();
@@ -98,9 +115,11 @@ public sealed class RecordingEngine(ICommandRunner probeRunner, IRecordingProces
             }
             token.ThrowIfCancellationRequested();
             var command=FfmpegCommandBuilder.Build(options,request.Region,request.WithAudio,temporary,input,wgcSource,video?.Arguments);
+            if(startGate is not null)await startGate.WaitAsync(token);
+            token.ThrowIfCancellationRequested();
             process=processes.Start(executable,new[]{"-progress","pipe:1","-stats_period","0.2","-nostats","-loglevel","warning"}.Concat(command.Arguments).ToArray());
             run=new RecordingRun(process,source,lifetime,target,temporary,stopTimeout??TimeSpan.FromSeconds(15),command.Width,command.Height,
-                wgcSource is null?CaptureBackend.Gdi:CaptureBackend.WindowsGraphicsCapture,sourceFallback,video);
+                effectiveBackend,sourceFallback,video);
             _=run.Completion.ContinueWith(_=>Volatile.Write(ref occupied,0),CancellationToken.None,TaskContinuationOptions.ExecuteSynchronously,TaskScheduler.Default);
             var wait=Task.WhenAny(process.Ready,process.Exit,source?.Completion??Task.Delay(Timeout.Infinite),video?.Completion??Task.Delay(Timeout.Infinite));
             var ready=await wait.WaitAsync(startTimeout??TimeSpan.FromSeconds(12),token);

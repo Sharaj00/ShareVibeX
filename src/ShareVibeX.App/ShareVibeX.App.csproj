@@ -6,7 +6,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
-    <Version>0.17.1</Version>
+    <Version>0.18.0</Version>
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
@@ -18,6 +18,15 @@
     <ProjectReference Include="../ShareVibeX.Platform.Windows/ShareVibeX.Platform.Windows.csproj" />
     <AvaloniaResource Include="Assets/**" />
   </ItemGroup>
+  <Target Name="CreatePortableLauncher" AfterTargets="Publish" Condition="'$(PortableLauncherPath)' != ''">
+    <CreateAppHost AppHostSourcePath="$(AppHostSourcePath)"
+                   AppHostDestinationPath="$(PortableLauncherPath)"
+                   AppBinaryName="libs/$(AssemblyName)$(TargetExt)"
+                   IntermediateAssembly="@(IntermediateAssembly->'%(FullPath)')"
+                   WindowsGraphicalUserInterface="true"
+                   DotNetSearchLocations="AppLocal" />
+    <Delete Files="$(PublishDir)$(AssemblyName).exe" />
+  </Target>
 </Project>
 
 

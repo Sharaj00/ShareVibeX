@@ -17,11 +17,22 @@ public sealed class OverlayToolbarLayoutTests
         var region = new Rect(643 / scale, 0, 528 / scale, 599 / scale);
         var width = OverlayToolbarLayout.EditorWidth(528, scale, viewport.Width);
         var position = OverlayToolbarLayout.Place(region, new Size(width, 90), viewport);
-        Assert.Equal(Math.Min(690,viewport.Width-24),width);
+        Assert.Equal(Math.Min(734,viewport.Width-24),width);
         Assert.Equal(width,OverlayToolbarLayout.EditorWidth(80,scale,viewport.Width));
         Assert.True(position.X + width <= viewport.Width);
         Assert.True(position.Y + 90 <= viewport.Height);
     }
+    [Theory]
+    [InlineData(110)]
+    [InlineData(240)]
+    [InlineData(690)]
+    public void PanelsOfDifferentWidthsShareTheRegionCenter(int width)
+    {
+        var region=new Rect(440,120,160,320);
+        var panel=OverlayToolbarLayout.Place(region,new Size(width,70),new Size(1200,800));
+        Assert.Equal(region.Center.X,panel.X+width/2d);
+    }
+
     [Fact]
     public void BottomRegionPlacesPanelAboveWithoutLeavingMonitor()
     {

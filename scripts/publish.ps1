@@ -17,10 +17,10 @@ try {
     $temporary = Join-Path $projectRoot ('dist/publish-' + [Guid]::NewGuid().ToString('N'))
     & $dotnetCommand restore src/ShareVibeX.App/ShareVibeX.App.csproj -r win-x64 --locked-mode --nologo
     if ($LASTEXITCODE) { throw 'Locked publish restore failed.' }
-    & $dotnetCommand publish src/ShareVibeX.App/ShareVibeX.App.csproj -c Release -r win-x64 --self-contained true --no-restore -o $temporary --nologo -m:1 /nodeReuse:false
+    & $dotnetCommand publish src/ShareVibeX.App/ShareVibeX.App.csproj -c Release -r win-x64 --self-contained true --no-restore -o (Join-Path $temporary 'libs') ('-p:PortableLauncherPath=' + (Join-Path $temporary 'ShareVibeX.App.exe')) --nologo -m:1 /nodeReuse:false
     if ($LASTEXITCODE) { throw 'Publish failed.' }
     New-Item -ItemType Directory -Path (Join-Path $temporary 'data') -Force | Out-Null
-    foreach ($name in 'README.md','LINUX.md','LICENSE','THIRD-PARTY-NOTICES.md') {
+    foreach ($name in 'README.md','LINUX.md','CHANGELOG.md','LICENSE','THIRD-PARTY-NOTICES.md') {
         Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $temporary
     }
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/testing/WGC-video-manual.md') -Destination (Join-Path $temporary 'VERIFY.md')
@@ -34,7 +34,7 @@ try {
     try {
         $sourceFiles = Get-Item -LiteralPath @(
             '.gitignore','Directory.Build.props','Directory.Packages.props',
-            'global.json','LICENSE','LINUX.md','README.md','ShareVibeX.slnx','THIRD-PARTY-NOTICES.md'
+            'global.json','LICENSE','LINUX.md','CHANGELOG.md','README.md','ShareVibeX.slnx','THIRD-PARTY-NOTICES.md'
         )
         foreach ($folder in 'src','tests','scripts','docs','third-party-licenses') {
             $sourceFiles += Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -Recurse -File |
@@ -58,6 +58,7 @@ try {
         Move-Item -LiteralPath $publishDirectory -Destination $backup
     }
     Move-Item -LiteralPath $temporary -Destination $publishDirectory
+    & (Join-Path $PSScriptRoot 'prune-builds.ps1') -Version $Version
     Write-Output "Portable app: $publishDirectory"
     Write-Output "Portable ZIP: $zip"
 } finally { Pop-Location }

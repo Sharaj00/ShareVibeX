@@ -22,7 +22,7 @@ public static class SelectionRules
     }
     public static void Validate(SelectionOptions options)
     {
-        if(!Enum.IsDefined(options.OutlineStyle)||options.OutlineOpacity is <0 or >100||options.OutlineColor is not {Length:7} color||color[0]!='#'||!color[1..].All(char.IsAsciiHexDigit))
+        if(!Enum.IsDefined(options.OutlineStyle)||options.OutlineOpacity is <0 or >100||options.OutlineThickness is <1 or >12||options.OutlineColor is not {Length:7} color||color[0]!='#'||!color[1..].All(char.IsAsciiHexDigit))
             throw new ArgumentException(Loc.T("Enter a frame color in #RRGGBB format and an opacity between 0 and 100."));
         if(options.EditorDimPercent is <0 or >90)throw new ArgumentException(Loc.T("Editor dim strength must be between 0 and 90 percent."));
         if(options.InfoTemplate is null||options.InfoTemplate.Length>256||options.SnapSizes is null||options.SnapSizes.Length>512)throw new ArgumentException(Loc.T("Selection information or snap sizes are too long."));

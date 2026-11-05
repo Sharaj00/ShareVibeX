@@ -6,6 +6,14 @@ namespace ShareVibeX.Platform.Windows;
 
 public static class WindowsCaptureApplication
 {
+    public static PixelRect? GetForegroundBounds()
+    {
+        if(!OperatingSystem.IsWindows())return null;
+        var window=GetForegroundWindow();
+        GetWindowThreadProcessId(window,out var process);
+        if(process==0||process==(uint)Environment.ProcessId||IsIconic(window)||!GetWindowRect(window,out var bounds))return null;
+        return new PixelRect(bounds.Left,bounds.Top,bounds.Right-bounds.Left,bounds.Bottom-bounds.Top);
+    }
     public static string GetName()
     {
         if(!OperatingSystem.IsWindows())return "Desktop";

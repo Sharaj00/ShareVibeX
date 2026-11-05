@@ -13,6 +13,7 @@ internal sealed class HotkeyEditor : StackPanel
     private readonly Button change;
 
     private bool listening;
+    public event Action? ShortcutChanged;
     public string Shortcut { get; private set; }
 
     public HotkeyEditor(string shortcut)
@@ -48,8 +49,10 @@ internal sealed class HotkeyEditor : StackPanel
     public bool TryCaptureRegisteredShortcut(string shortcut)
     {
         if (!listening) return false;
+        var previous=Shortcut;
         Shortcut = HotkeyGesture.Parse(shortcut).ToString();
         Cancel();
+        if(Shortcut!=previous)ShortcutChanged?.Invoke();
         return true;
     }
 

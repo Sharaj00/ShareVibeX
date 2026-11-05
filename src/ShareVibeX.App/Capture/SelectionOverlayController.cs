@@ -21,6 +21,7 @@ public sealed class SelectionOverlayController(IDesktopCapture capture,Clipboard
     Func<RecordingStartRequest,CancellationToken,Task>? record = null, ShareVibeX.App.History.CaptureHistory? history=null, ShareVibeX.App.History.CaptureHistoryContext? historyContext=null, Action<bool,string?>? completed=null, Action<CapturedFrame>? previewReady=null,Func<ShareVibeX.Core.Capture.PixelPoint>? cursorPosition=null,Func<R,IDisposable>? constrainCursor=null,Func<ShareVibeX.Core.Capture.PixelPoint,bool,R?>? detectRegion=null)
 {
     public Func<RecordingOptions,CancellationToken,Task<bool>>? MicrophoneProbe {get;init;}
+    public bool ShowActivated {get;init;}=true;
     public async Task<CaptureSession?> SelectAsync(DesktopLayout layout,CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
@@ -49,6 +50,9 @@ public sealed class SelectionOverlayController(IDesktopCapture capture,Clipboard
         CapturedFrame? rendererFrame=null;
         var busy=false;
         var recordingStarted=false;
+        var countdownSeconds=settings.RecordingCountdownSeconds;
+        var pickingColor=false;
+        var includeCursor=settings.RecordingDefaults.IncludeCursor;
         var videoSources=RecordingSourceChoices.FromOptions(settings.RecordingDefaults);
         var checkingMicrophone=false;var nextMicrophoneCheck=DateTime.MinValue;
         async Task CheckMicrophone()
@@ -81,29 +85,44 @@ public sealed class SelectionOverlayController(IDesktopCapture capture,Clipboard
             {
                 var window=windowFactory?.Invoke()??new Window();
                 window.Title=Loc.T("ShareVibeX · Capture");window.WindowDecorations=WindowDecorations.None;window.CanResize=false;
-                window.ShowInTaskbar=false;window.Topmost=true;window.Position=new(monitor.Bounds.X,monitor.Bounds.Y);
+                window.ShowInTaskbar=false;window.ShowActivated=ShowActivated;window.Topmost=true;window.Position=new(monitor.Bounds.X,monitor.Bounds.Y);
                 window.Width=monitor.Bounds.Width/monitor.Scale;window.Height=monitor.Bounds.Height/monitor.Scale;
                 window.Background=Brushes.Transparent;window.TransparencyLevelHint=[WindowTransparencyLevel.Transparent];
                 window.TransparencyBackgroundFallback=Brushes.Transparent;
-                var surface=new EditorSurface(state,layout,monitor) {Options=selectionOptions,ActiveMonitorBounds=activeMonitor,DetectRegion=selectionOptions.DetectWindows?(detectRegion??ShareVibeX.Platform.Windows.WindowsSelectionTools.FindRegion):null,IsLiveSelection=true,Cancel=()=>{if(busy)return;if(textEditor is not null)FinishText(false);else completion.TrySetResult(null);}};
+                var surface=new EditorSurface(state,layout,monitor) {Options=selectionOptions,ActiveMonitorBounds=activeMonitor,DetectRegion=selectionOptions.DetectWindows?(detectRegion??ShareVibeX.Platform.Windows.WindowsSelectionTools.FindRegion):null,IsLiveSelection=true,PickColor=PickColor,Cancel=()=>{if(busy)return;if(textEditor is not null)FinishText(false);else completion.TrySetResult(null);}};
                 var canvas=new Canvas();
-                var toolbar=new EditorToolbar(state,()=>Refresh(true),save=>Export(window,save),()=>{if(!busy)completion.TrySetResult(null);}) {IsVisible=false};
+                var toolbar=new EditorToolbar(state,()=>Refresh(true),save=>Export(window,save),()=>{if(!busy)completion.TrySetResult(null);},()=>SetColorPicking(!pickingColor)) {IsVisible=false};
                 toolbars.Add(toolbar);canvas.Children.Add(toolbar);
                 var modebar=new CaptureModeToolbar(()=>EnterEditor(window),
                     ()=>{if(busy || state.IsDrawing)return;modes.SelectVideo();Refresh(false);_=CheckMicrophone();},()=>{if(busy || state.IsDrawing)return;modes.BackToChoosing();Refresh(false);},()=>{if(!busy)completion.TrySetResult(null);},
                     record is null?null:sources=>StartRecording(sources),videoSources,sources=>
-                    {videoSources=sources;foreach(var bar in modebars)bar.SetSources(sources);},settings.RecordingDefaults.AudioSource==AudioSource.DirectShow,settings.RecordingDefaults.IsAnimation){IsVisible=false};
+                    {videoSources=sources;foreach(var bar in modebars)bar.SetSources(sources);},settings.RecordingDefaults.AudioSource==AudioSource.DirectShow,settings.RecordingDefaults.IsAnimation,includeCursor,
+                    included=>{includeCursor=included;foreach(var bar in modebars)bar.SetCursorIncluded(included);},countdownSeconds,seconds=>
+                    {countdownSeconds=seconds;foreach(var bar in modebars)bar.SetCountdown(seconds);}){IsVisible=false};
+                modebar.MoveGrip.Configure(()=>state.Region,(region,dx,dy)=>
+                {
+                    var bounds=activeMonitor??layout.Bounds;
+                    if(monitor.Bounds.Intersect(region)==region)bounds=monitor.Bounds;
+                    state.Region=SelectionRules.Move(region,dx,dy,bounds);
+                    Refresh(false);
+                });
+                modebar.MoveGrip.SetAvailable(true);
                 modebars.Add(modebar);canvas.Children.Add(modebar);
+                modebar.SizeChanged+=(_,args)=>
+                {
+                    if(modebar.IsVisible)PlaceToolbar(window,monitor,modebar,args.NewSize);
+                };
                 window.Content=new Grid {Children={surface,canvas}};
                 hosts.Add((window,surface,canvas));
                 var index=hosts.Count-1;
                 surface.Changed=Refresh;
                 surface.BeforePointerDown=()=>FinishText(true);
                 surface.TextEditRequested=annotation=>BeginText(index,annotation);
-                window.Opened+=(_,_)=>{window.Width=monitor.Bounds.Width/window.RenderScaling;window.Height=monitor.Bounds.Height/window.RenderScaling;window.Position=new(monitor.Bounds.X,monitor.Bounds.Y);surface.Focus();};
-                window.Closed+=(_,_)=>completion.TrySetResult(null);
+                window.Opened+=(_,_)=>{window.Width=monitor.Bounds.Width/window.RenderScaling;window.Height=monitor.Bounds.Height/window.RenderScaling;window.Position=new(monitor.Bounds.X,monitor.Bounds.Y);if(ShowActivated)surface.Focus();};
+                window.Closed+=(_,_)=>{modebar.MoveGrip.Dispose();completion.TrySetResult(null);};
                 window.AddHandler(InputElement.KeyDownEvent,(_,e)=>
                 {
+                    if(pickingColor&&e.Key==Key.Escape){SetColorPicking(false);e.Handled=true;return;}
                     if(modes.Mode!=CaptureInteractionMode.Choosing || busy || e.Source is TextBox)return;
                     if(e.Key==Key.Enter || e.Key==Key.C && e.KeyModifiers.HasFlag(KeyModifiers.Control))
                     {_=Export(window,false);e.Handled=true;}
@@ -193,11 +212,34 @@ public sealed class SelectionOverlayController(IDesktopCapture capture,Clipboard
                 toolbar.Measure(new Size(availableWidth,double.PositiveInfinity));
                 var toolbarWidth=double.IsNaN(toolbar.Width)?toolbar.DesiredSize.Width:toolbar.Width;
                 var height=Math.Max(1,toolbar.DesiredSize.Height);
-                var position=OverlayToolbarLayout.Place(new Rect((state.Region.X-monitor.Bounds.X)/scale+(editing?(state.Region.Width/scale-toolbarWidth)/2:0),(state.Region.Y-monitor.Bounds.Y)/scale,state.Region.Width/scale,state.Region.Height/scale),
-                    new Size(toolbarWidth,height),new Size(host.Window.Width,host.Window.Height));
-                Canvas.SetLeft(toolbar,position.X);Canvas.SetTop(toolbar,position.Y);
+                PlaceToolbar(host.Window,monitor,toolbar,new Size(toolbarWidth,height));
                 host.Surface.InvalidateVisual();
             }
+        }
+        void PlaceToolbar(Window window,MonitorInfo monitor,Control toolbar,Size size)
+        {
+            var scale=window.RenderScaling;
+            var region=new Rect((state.Region.X-monitor.Bounds.X)/scale,(state.Region.Y-monitor.Bounds.Y)/scale,state.Region.Width/scale,state.Region.Height/scale);
+            var position=OverlayToolbarLayout.Place(region,size,new Size(window.Width,window.Height));
+            Canvas.SetLeft(toolbar,position.X);Canvas.SetTop(toolbar,position.Y);
+        }
+        void SetColorPicking(bool enabled)
+        {
+            pickingColor=enabled;
+            SetError(enabled?"Click the screenshot to pick a color · Esc: cancel":"");
+            Refresh(false);
+        }
+        bool PickColor(ShareVibeX.Core.Capture.PixelPoint point)
+        {
+            if(!pickingColor||rendererFrame is not {} frame)return false;
+            var x=point.X-snapshot.Bounds.X;var y=point.Y-snapshot.Bounds.Y;
+            if(x>=0&&x<frame.Width&&y>=0&&y<frame.Height)
+            {
+                var index=y*frame.Stride+x*4;
+                state.SetColor(0xff000000u|((uint)frame.Bgra32[index+2]<<16)|((uint)frame.Bgra32[index+1]<<8)|frame.Bgra32[index]);
+                SetColorPicking(false);
+            }
+            return true;
         }
         void ResolveCaptureApplication()
         {
@@ -262,7 +304,7 @@ public sealed class SelectionOverlayController(IDesktopCapture capture,Clipboard
             busy=true;state.IsExporting=true;foreach(var host in hosts)host.Surface.Busy=true;Refresh(false);
             try
             {
-                ResolveCaptureApplication();var options=settings.RecordingDefaults;
+                ResolveCaptureApplication();var options=settings.RecordingDefaults with{IncludeCursor=includeCursor};
                 if(options.IsAnimation)sources=new(false,false);
                 if(sources.Microphone&&MicrophoneProbe is not null&&!await MicrophoneProbe(options,token))
                 {videoSources=sources with{Microphone=false};foreach(var bar in modebars){bar.SetMicrophoneAvailable(false);bar.SetSources(videoSources);}SetError(ShareVibeX.App.Recording.MicrophoneAvailability.UnavailableMessage);return;}
@@ -272,7 +314,7 @@ public sealed class SelectionOverlayController(IDesktopCapture capture,Clipboard
                 await (waitForDesktop??WaitForDesktop)(token);
                 var selected=hosts.Select((host,index)=>(Host:host,Bar:modebars[index])).First(pair=>pair.Bar.IsVisible);
                 var origin=selected.Host.Window.PointToScreen(new(Canvas.GetLeft(selected.Bar),Canvas.GetTop(selected.Bar)));
-                await record(new(options,state.Region,sources){CountdownSeconds=settings.RecordingCountdownSeconds,OutlineOptions=settings.SelectionDefaults,ToolbarPlacement=new(new(origin.X,origin.Y),selected.Bar.Bounds.Width,selected.Bar.Bounds.Height)},token);
+                await record(new(options,state.Region,sources){CountdownSeconds=countdownSeconds,OutlineOptions=settings.SelectionDefaults,ToolbarPlacement=new(new(origin.X,origin.Y),selected.Bar.Bounds.Width,selected.Bar.Bounds.Height)},token);
                 recordingStarted=true;completion.TrySetResult(null);
             }
             catch(OperationCanceledException){completion.TrySetResult(null);}

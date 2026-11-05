@@ -14,9 +14,30 @@ public sealed class PortableSettingsTests : IDisposable
     {
         var settings = await new PortableSettingsStore(directory).LoadAsync();
         Assert.Equal(ThemeMode.System, settings.Theme);
-        Assert.Equal("Ctrl+PrintScreen", settings.CaptureHotkey);
+        Assert.Equal("PrintScreen",settings.CaptureHotkey);
+        Assert.Equal(ShareVibeX.Core.Capture.CaptureBackend.Gdi,settings.CaptureBackend);
+        Assert.True(settings.SelectionDefaults.DetectWindows);
+        Assert.True(settings.SelectionDefaults.DetectControls);
+        Assert.True(settings.SelectionDefaults.RestrictToActiveMonitor);
+        Assert.Equal(2,settings.SelectionDefaults.OutlineThickness);
         Assert.Null(settings.OutputDirectory);
         Assert.False(File.Exists(FilePath));
+    }
+
+    [Fact]
+    public async Task RootSettingsTakePriorityAndKeepTheLegacyFile()
+    {
+        var settingsPath=Path.Combine(directory,"settings.json");
+        var legacy=new PortableSettingsStore(Path.Combine(directory,"data"));
+        await legacy.SaveAsync(new AppSettings(CaptureHotkey:"Alt+F8"));
+        var portable=new PortableSettingsStore(legacy.DataDirectory,settingsPath);
+        Assert.Equal("Alt+F8",(await portable.LoadAsync()).CaptureHotkey);
+        Assert.Equal(legacy.SettingsPath,portable.ExistingSettingsPath);
+        Assert.False(File.Exists(settingsPath));
+        await portable.SaveAsync(AppSettings.FactoryDefaults);
+        Assert.Equal(settingsPath,portable.ExistingSettingsPath);
+        Assert.Equal("PrintScreen",(await portable.LoadAsync()).CaptureHotkey);
+        Assert.Equal("Alt+F8",(await legacy.LoadAsync()).CaptureHotkey);
     }
 
     [Fact]

@@ -22,6 +22,13 @@ public static class RecordingValidation
         VideoEncoder.Libxvid or VideoEncoder.Gif or VideoEncoder.LibwebpAnim or VideoEncoder.Apng or VideoEncoder.Ffv1 => ["auto"],
         _ => ["auto", "ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow", "placebo"]
     };
+    public static string AutoPreset(VideoEncoder encoder)=>encoder switch
+    {
+        VideoEncoder.H264Nvenc or VideoEncoder.HevcNvenc=>"p4",
+        VideoEncoder.H264Amf or VideoEncoder.HevcAmf=>"balanced",
+        VideoEncoder.Libvpx or VideoEncoder.LibvpxVp9 or VideoEncoder.LibaomAv1 or VideoEncoder.Libsvtav1=>"6",
+        _=>"veryfast"
+    };
     public static string[] Tunes(VideoEncoder encoder) => encoder switch
     {
         VideoEncoder.Libx264 => ["", "film", "animation", "grain", "stillimage", "fastdecode", "zerolatency"],
