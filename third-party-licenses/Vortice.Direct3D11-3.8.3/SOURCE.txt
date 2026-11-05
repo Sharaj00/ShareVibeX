@@ -1,0 +1,5 @@
+Package: Vortice.Direct3D11 3.8.3
+Package source: https://www.nuget.org/packages/Vortice.Direct3D11/3.8.3
+License source: https://raw.githubusercontent.com/amerkoleci/Vortice.Windows/9e609cb9439c9872aa1b339f177e40ec96f77239/LICENSE
+Resolved URL: https://raw.githubusercontent.com/amerkoleci/Vortice.Windows/9e609cb9439c9872aa1b339f177e40ec96f77239/LICENSE
+Package copyright: Copyright (c) Amer Koleci and Contributors

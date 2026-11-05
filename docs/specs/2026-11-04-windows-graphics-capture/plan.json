@@ -1,0 +1,326 @@
+{
+  "feature": "windows-graphics-capture-screenshots",
+  "spec": "docs/specs/2026-11-04-windows-graphics-capture/design.md",
+  "goal": "Deliver native WGC screenshots with Automatic/WGC/GDI selection and startup-only GDI fallback, preserving the existing portable capture workflow. Video WGC, encoder expansion and hotkey recording remain subsequent tasks in TODO.md.",
+  "preserved_behavior": [
+    "Tray-only startup, portable data, English/Russian UI and System/Contrast themes.",
+    "Live undimmed selection, fresh Enter/Ctrl+C capture, freeze only on screenshot-editor entry.",
+    "Screenshot capture needs no FFmpeg; clipboard, annotations, history and capture exclusion retain their contracts.",
+    "Physical multi-monitor coordinates, negative origins, portrait displays and desktop gaps.",
+    "Current gdigrab video/audio/pause/preview/edit/export remain unchanged in this stage.",
+    "Core remains net10.0 and contains no Windows SDK, Direct3D or WinRT dependency.",
+    "No native capture, GUI, audio or clipboard acceptance is run without separate user authorization."
+  ],
+  "phases": [
+    {
+      "id": "S1",
+      "name": "Build and package a Windows-only native capture boundary",
+      "tasks": [
+        {
+          "id": "S1.1",
+          "name": "Verify and pin WinRT/Direct3D build dependencies before implementing capture",
+          "depends_on": [],
+          "inputs": [
+            "Pinned SDK10.0.403",
+            "Local SDK BundledVersions declares WindowsSdkPackageVersion10.0.19041.57",
+            "Vortice.Direct3D11 3.8.3 package metadata"
+          ],
+          "description": "Use standard net10.0-windows10.0.19041.0 targeting for Platform.Windows, App, App.Tests and Windows.Smoke; leave Core/Core.Tests net10.0. Pin the Windows SDK projection and Vortice.Direct3D11 3.8.3, inspect transitive runtime assets/licenses, and prove the projected WGC/Direct3D interop signatures compile and self-contained publish resolves every dependency. Do not run device creation, capability APIs or capture as part of feasibility checks. If dependency/API compatibility requires a different architecture or substantial dependency expansion, stop and revise this task before continuing. The Windows target is the existing Windows release host, not Linux runtime support.",
+          "files": {
+            "reuse": [
+              "global.json",
+              "Directory.Build.props",
+              "scripts/build.ps1",
+              "scripts/publish.ps1"
+            ],
+            "create": [],
+            "modify": [
+              "Directory.Packages.props",
+              "src/ShareVibeX.Platform.Windows/ShareVibeX.Platform.Windows.csproj",
+              "src/ShareVibeX.App/ShareVibeX.App.csproj",
+              "tests/ShareVibeX.App.Tests/ShareVibeX.App.Tests.csproj",
+              "tests/ShareVibeX.Windows.Smoke/ShareVibeX.Windows.Smoke.csproj",
+              "affected packages.lock.json files",
+              "THIRD-PARTY-NOTICES.md",
+              "third-party-licenses"
+            ],
+            "delete": []
+          },
+          "new_abstractions": [],
+          "validation": {
+            "tests": [
+              "Restore the changed dependency graph intentionally, then locked restore succeeds",
+              "Release solution build and existing internal tests pass",
+              "Compile-only WGC/framepool/Direct3D interop and portable publish dependency checks"
+            ],
+            "acceptance": [
+              "No Windows dependencies enter Core",
+              "No installed .NET runtime, Visual Studio, C++ build tools or FFmpeg is required by the published screenshot app",
+              "Native smoke harness is compiled only"
+            ]
+          },
+          "status": "completed",
+          "verification_report": "docs/testing/wgc-foundation-and-policy.md"
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "name": "Persist capture preference and preserve fallback semantics",
+      "tasks": [
+        {
+          "id": "S2.1",
+          "name": "Add capture selection and a tested screenshot routing policy",
+          "depends_on": [
+            "S1.1"
+          ],
+          "inputs": [
+            "Core IDesktopCapture contract",
+            "Existing AppSettings/PortableSettingsStore",
+            "Existing GDI WindowsDesktopCapture"
+          ],
+          "description": "Add CaptureBackend values Automatic, WindowsGraphicsCapture and Gdi, default Automatic for missing settings. Add a localized selector in Capture settings with explicit Stage1 help that the preference currently applies to screenshots and video still uses GDI. Preserve all unrelated JSON fields/options and validate unknown enum values. Implement screenshot routing behind IDesktopCapture: GDI bypasses WGC, strict WGC never silently substitutes, Automatic falls back only for typed WGC source-unavailable/initialization/first-frame-timeout failures. Cancellation, topology changes, invalid frames, allocation failures and export/clipboard errors are not blanket fallback conditions. Report effective method and reason through a bounded operation result/status callback without retaining pixel buffers or opening Settings.",
+          "files": {
+            "reuse": [
+              "src/ShareVibeX.Core/Platform/IDesktopCapture.cs",
+              "src/ShareVibeX.Platform.Windows/WindowsDesktopCapture.cs"
+            ],
+            "create": [
+              "src/ShareVibeX.Core/Capture/CaptureBackend.cs",
+              "src/ShareVibeX.App/Capture/ScreenshotCaptureRouter.cs",
+              "tests/ShareVibeX.App.Tests/ScreenshotCaptureRouterTests.cs"
+            ],
+            "modify": [
+              "src/ShareVibeX.Core/Settings/AppSettings.cs",
+              "src/ShareVibeX.Core/Settings/PortableSettingsStore.cs",
+              "src/ShareVibeX.App/Views/CaptureSettingsPage.cs",
+              "src/ShareVibeX.App/Views/SettingsWindow.cs",
+              "src/ShareVibeX.Core/Localization/ru.json",
+              "tests/ShareVibeX.Core.Tests/PortableSettingsTests.cs",
+              "tests/ShareVibeX.App.Tests/CaptureSettingsTests.cs"
+            ],
+            "delete": []
+          },
+          "new_abstractions": [
+            {
+              "name": "CaptureBackend",
+              "requirement": "Persist the approved user choice",
+              "consumers": [
+                "Capture settings",
+                "Screenshot routing"
+              ]
+            },
+            {
+              "name": "ScreenshotCaptureRouter",
+              "requirement": "Select native WGC/GDI and classify initial fallback without changing the screenshot workflow",
+              "consumers": [
+                "CompositionRoot desktop capture"
+              ]
+            }
+          ],
+          "validation": {
+            "tests": [
+              "Old settings load Automatic and preserve image/video/hotkey/history preferences",
+              "Preference round-trip and unknown enum rejection",
+              "Fake GDI/WGC calls prove strict selection, eligible fallback, cancellation propagation and no fallback after successful acquisition",
+              "English/Russian control save/reopen"
+            ],
+            "acceptance": [
+              "No false claim that Stage1 enables WGC video",
+              "No native capture in routing/UI tests"
+            ]
+          },
+          "status": "completed",
+          "verification_report": "docs/testing/wgc-foundation-and-policy.md"
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "name": "Acquire complete fresh desktop snapshots through WGC",
+      "tasks": [
+        {
+          "id": "S3.1",
+          "name": "Implement request-owned monitor capture and deterministic cleanup",
+          "depends_on": [
+            "S1.1",
+            "S2.1"
+          ],
+          "inputs": [
+            "WindowsMonitorProvider MONITORINFOEX.Device identities",
+            "WGC CreateForMonitor / CreateFreeThreaded",
+            "Direct3D staging readback"
+          ],
+          "description": "Add a Windows-only WGC source. Resolve fresh HMONITOR handles by the same MONITORINFOEX.Device string stored in MonitorInfo.Id, never by FFmpeg index or PnP DeviceID. Check WGC support and validate current monitor bounds/scale against the request. Use request-owned frame pools/capture sessions and bounded GPU readback; explicitly set IsCursorCaptureEnabled=false before StartCapture. Copy valid ContentSize through staging textures while honoring row pitch; output checked, opaque BGRA bytes. Capture runs only for requested screenshots, never continuously from tray startup. Use a shared request deadline of5 seconds and reject stale/duplicate completion. Native bindings and monitor-session factory remain isolated from Core and injectable at the capture boundary for lifecycle tests.",
+          "files": {
+            "reuse": [
+              "src/ShareVibeX.Platform.Windows/WindowsMonitorProvider.cs",
+              "src/ShareVibeX.Core/Capture/DesktopSnapshot.cs"
+            ],
+            "create": [
+              "src/ShareVibeX.Platform.Windows/Capture/WindowsGraphicsDesktopCapture.cs",
+              "src/ShareVibeX.Platform.Windows/Capture/WgcMonitorCapture.cs",
+              "src/ShareVibeX.Platform.Windows/Capture/WgcInterop.cs",
+              "tests/ShareVibeX.App.Tests/WgcCaptureLifetimeTests.cs"
+            ],
+            "modify": [
+              "src/ShareVibeX.Platform.Windows/WindowsMonitorProvider.cs"
+            ],
+            "delete": []
+          },
+          "new_abstractions": [
+            {
+              "name": "WindowsGraphicsDesktopCapture",
+              "requirement": "Supply native WGC frames through the existing screenshot contract",
+              "consumers": [
+                "ScreenshotCaptureRouter"
+              ]
+            },
+            {
+              "name": "WgcMonitorCapture",
+              "requirement": "Own framepool/session/GPU resources and provide a bounded fresh monitor frame",
+              "consumers": [
+                "WindowsGraphicsDesktopCapture"
+              ]
+            }
+          ],
+          "validation": {
+            "tests": [
+              "Fake sessions verify cursor disabled before capture starts",
+              "Exactly one terminal result for frame/timeout/cancel races",
+              "Late callbacks during cleanup cannot access released framepool/device",
+              "Cancellation during readback releases the acquired frame only after copying stops",
+              "Initialization/partial construction failures dispose all owned native wrappers",
+              "Invalid dimensions/row pitch/content size are rejected"
+            ],
+            "acceptance": [
+              "No picker added to normal selection",
+              "No GPU/monitor capture API is executed by automated fake tests",
+              "No unbounded frame queue or background warm capture"
+            ]
+          },
+          "status": "completed",
+          "verification_report": "docs/testing/wgc-native-session.md"
+        },
+        {
+          "id": "S3.2",
+          "name": "Compose monitor frames without partial or misleading screenshots",
+          "depends_on": [
+            "S3.1"
+          ],
+          "inputs": [
+            "DesktopSnapshot BGRA contract",
+            "Monitor physical bounds and frame timestamps"
+          ],
+          "description": "Assemble the same virtual desktop as GDI: negative origins, portrait dimensions, deterministic monitor order and opaque black gaps. Compare ContentSize to captured geometry and recheck monitor topology before publishing. All monitors must succeed. Frame timestamps must share the same clock, fall within the request freshness interval and have at most100ms inter-monitor skew; reacquire older frames within the shared5-second deadline, otherwise report acquisition timeout. This is bounded temporal consistency, not an atomic simultaneous desktop snapshot. Stage1 supports SDR WGC only: detect active advanced-color/HDR state without pixel sampling; HDR or indeterminate color capability is typed WGC-unavailable so Automatic can retain GDI and strict WGC explains the limitation. Do not ship an unchecked BGRA conversion as HDR tone mapping.",
+          "files": {
+            "reuse": [
+              "src/ShareVibeX.Core/Capture/DesktopSnapshot.cs",
+              "src/ShareVibeX.Core/Capture/PixelRect.cs"
+            ],
+            "create": [
+              "src/ShareVibeX.Platform.Windows/Capture/WgcDesktopComposition.cs",
+              "src/ShareVibeX.Platform.Windows/Capture/WindowsCaptureColorCapabilities.cs",
+              "tests/ShareVibeX.App.Tests/WgcDesktopCompositionTests.cs"
+            ],
+            "modify": [
+              "src/ShareVibeX.Platform.Windows/Capture/WindowsGraphicsDesktopCapture.cs"
+            ],
+            "delete": []
+          },
+          "new_abstractions": [
+            {
+              "name": "WgcDesktopComposition",
+              "requirement": "Produce the existing virtual desktop pixel contract from independent monitor frames",
+              "consumers": [
+                "WindowsGraphicsDesktopCapture"
+              ]
+            },
+            {
+              "name": "WindowsCaptureColorCapabilities",
+              "requirement": "Prevent silent washed-out HDR conversion in the SDR-only first stage",
+              "consumers": [
+                "WindowsGraphicsDesktopCapture"
+              ]
+            }
+          ],
+          "validation": {
+            "tests": [
+              "Synthetic colored/padded frames prove negative-coordinate and portrait composition, row boundaries, alpha and black gaps",
+              "Missing monitor, changed topology/content size and out-of-range buffer data never publish partial pixels",
+              "Timestamp skew/reacquisition obey shared deadline under a fake clock",
+              "HDR/unknown-color metadata selects eligible Auto fallback and actionable strict-mode failure"
+            ],
+            "acceptance": [
+              "DPI affects presentation only; composition uses physical pixels",
+              "No full HDR-output claim",
+              "Native multi-monitor/color behavior remains a user acceptance case"
+            ]
+          },
+          "status": "completed",
+          "verification_report": "docs/testing/WGC-stage1-internal.md"
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "name": "Integrate and deliver the first WGC screenshot build",
+      "tasks": [
+        {
+          "id": "S4.1",
+          "name": "Connect routing to the existing capture workflow and package a reviewable release",
+          "depends_on": [
+            "S2.1",
+            "S3.2"
+          ],
+          "inputs": [
+            "CompositionRoot capture wiring",
+            "Existing live selector/editor/export and recording contracts",
+            "Current portable publish script"
+          ],
+          "description": "Inject the router where CompositionRoot currently constructs WindowsDesktopCapture. Snapshot selection/editor/quick-copy callers keep IDesktopCapture and their hide/wait/restore ownership. Method changes apply to subsequent acquisitions; current edited pixels are not recaptured. Publish source/effective fallback reason through existing status/log/help surfaces using UI-thread dispatch. Keep video command generation/probing and native audio unchanged. Update current tracking/README/licenses/manual instructions, preserving the user's TODO additions/removals and deferred scope. Produce a new portable0.12.0 build and source ZIP after relevant checks pass; retain previous releases/data.",
+          "files": {
+            "reuse": [
+              "src/ShareVibeX.App/Capture/DesktopCapturePresentation.cs",
+              "src/ShareVibeX.App/Capture/SelectionOverlayController.cs",
+              "tests/ShareVibeX.App.Tests/LiveCaptureModeTests.cs",
+              "tests/ShareVibeX.App.Tests/CaptureWorkflowTests.cs"
+            ],
+            "create": [
+              "docs/testing/WGC-stage1-internal.md",
+              "docs/testing/WGC-stage1-manual.md"
+            ],
+            "modify": [
+              "src/ShareVibeX.App/CompositionRoot.cs",
+              "src/ShareVibeX.App/ShareVibeX.App.csproj",
+              "scripts/publish.ps1",
+              "README.md",
+              "CODEX.md",
+              "BUGS.md",
+              "TODO.md",
+              "THIRD-PARTY-NOTICES.md"
+            ],
+            "delete": []
+          },
+          "new_abstractions": [],
+          "validation": {
+            "tests": [
+              "scripts/build.ps1 locked restore/Release/internal suite",
+              "Headless fresh quick-copy/editor entry and cancellation/fallback integration",
+              "Existing recording command/audio/pause/edit tests retain GDI behavior",
+              "scripts/publish.ps1 -Version0.12.0",
+              "Archive integrity, shipped DLL/source/manual/version/hash checks, runtime dependencies/licenses, no user data or bundled FFmpeg"
+            ],
+            "acceptance": [
+              "User checklist covers Automatic/strictWGC/GDI, real screenshots and clipboard/file equality, mixed DPI/negative/portrait monitors, cancellation, device loss, overlay/cursor exclusion and SDR/HDR fallback",
+              "Do not run native smoke/capture/audio/clipboard or launch the GUI without separate authorization",
+              "Report native acceptance as pending; do not equate build success with WGC correctness/performance"
+            ]
+          },
+          "status": "completed",
+          "verification_report": "docs/testing/WGC-stage1-internal.md"
+        }
+      ]
+    }
+  ]
+}

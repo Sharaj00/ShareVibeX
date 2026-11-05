@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0-windows10.0.19041.0</TargetFramework><WindowsSdkPackageVersion>10.0.19041.57</WindowsSdkPackageVersion><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Avalonia.Headless" />
+    <ProjectReference Include="../../src/ShareVibeX.App/ShareVibeX.App.csproj" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

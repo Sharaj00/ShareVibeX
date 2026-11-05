@@ -1,0 +1,5 @@
+Package: Vortice.Mathematics 2.1.0
+Package source: https://www.nuget.org/packages/Vortice.Mathematics/2.1.0
+License source: https://raw.githubusercontent.com/amerkoleci/Vortice.Mathematics/fa05ec6dcba48f3f7331791da6dc7f3d866b2ad6/LICENSE
+Resolved URL: https://raw.githubusercontent.com/amerkoleci/Vortice.Mathematics/fa05ec6dcba48f3f7331791da6dc7f3d866b2ad6/LICENSE
+Package copyright: Copyright (c) Amer Koleci and Contributors

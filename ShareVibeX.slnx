@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ShareVibeX.Core/ShareVibeX.Core.csproj" />
+    <Project Path="src/ShareVibeX.Platform.Windows/ShareVibeX.Platform.Windows.csproj" />
+    <Project Path="src/ShareVibeX.App/ShareVibeX.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ShareVibeX.Core.Tests/ShareVibeX.Core.Tests.csproj" />
+    <Project Path="tests/ShareVibeX.App.Tests/ShareVibeX.App.Tests.csproj" />
+    <Project Path="tests/ShareVibeX.Windows.Smoke/ShareVibeX.Windows.Smoke.csproj" />
+  </Folder>
+</Solution>

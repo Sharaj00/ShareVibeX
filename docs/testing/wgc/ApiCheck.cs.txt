@@ -1,0 +1,31 @@
+using System.Runtime.InteropServices;
+using Vortice.Direct3D11;
+using Vortice.DXGI;
+using Windows.Graphics;
+using Windows.Graphics.Capture;
+using Windows.Graphics.DirectX;
+using Windows.Graphics.DirectX.Direct3D11;
+
+// Compile-only contract. This library has no entry point and is never executed.
+internal static class ApiCheck
+{
+    public static void Signatures(IDirect3DDevice winrtDevice, GraphicsCaptureItem item,
+        ID3D11Device device, ID3D11DeviceContext context, ID3D11Texture2D source, SizeInt32 size)
+    {
+        using var pool=Direct3D11CaptureFramePool.CreateFreeThreaded(winrtDevice,DirectXPixelFormat.B8G8R8A8UIntNormalized,2,size);
+        using var session=pool.CreateCaptureSession(item);session.IsCursorCaptureEnabled=false;
+        using var frame=pool.TryGetNextFrame();
+        _=frame.ContentSize;_=frame.SystemRelativeTime;_=frame.Surface;
+        var description=new Texture2DDescription(Format.B8G8R8A8_UNorm,(uint)size.Width,(uint)size.Height,1,1,BindFlags.None,ResourceUsage.Staging,CpuAccessFlags.Read);
+        using var staging=device.CreateTexture2D(description);
+        context.CopyResource(staging,source);
+        context.Map(staging,0,MapMode.Read,Vortice.Direct3D11.MapFlags.None,out var mapped).CheckError();
+        _=mapped.DataPointer;_=mapped.RowPitch;context.Unmap(staging,0);
+        using var dxgi=device.QueryInterface<IDXGIDevice>();
+        Marshal.ThrowExceptionForHR(CreateDirect3D11DeviceFromDXGIDevice(dxgi.NativePointer,out var inspectable));
+        try{_=WinRT.MarshalInterface<IDirect3DDevice>.FromAbi(inspectable);}finally{Marshal.Release(inspectable);}
+    }
+    [DllImport("d3d11.dll",ExactSpelling=true)]
+    private static extern int CreateDirect3D11DeviceFromDXGIDevice(nint device,out nint inspectable);
+}
+

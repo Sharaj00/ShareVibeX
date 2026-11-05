@@ -1,0 +1,14 @@
+.tools/
+.superpowers/
+**/bin/
+**/obj/
+dist/
+data/
+.vs/
+*.user
+TestResults/
+
+/BUGS.md
+/CODEX.md
+/TODO.md
+*.log
